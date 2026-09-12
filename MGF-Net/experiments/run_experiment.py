@@ -229,7 +229,9 @@ def run(args):
         "batch_size": args.batch_size,
         "oversample": args.oversample,
         "learning_rate": args.learning_rate,
-        "loss": {"alpha_ssim": args.alpha, "beta_l1": args.beta, "gamma_grad": args.gamma},
+        "loss": {"alpha_ssim": args.alpha, "beta_l1": args.beta,
+                 "gamma_grad": args.gamma, "delta_balance": args.delta},
+        "use_edge_refine": not args.no_edge_refine,
         "split_file": os.path.relpath(args.split, ROOT),
         "split_key": args.split_key,
         "eval_split": args.eval_split,
@@ -253,6 +255,8 @@ def run(args):
     print(f"实验 {args.tag}")
     print(f"  门控      : {args.gate}")
     print(f"  频域变换  : {args.wavelet}")
+    print(f"  edge_refine: {'关闭（旁路）' if args.no_edge_refine else '开启'}"
+          f"    balance权重: {args.delta}")
     print(f"  索引来源  : {data['source']}")
     print(f"  划分方式  : {args.split_key}")
     print(f"  种子      : {args.seed}   轮数: {args.epochs}   patch: {args.patch_size}")
@@ -276,10 +280,12 @@ def run(args):
 
     model = MGFNet(in_channels=1, mid_channels=args.mid_channels,
                    learnable_dwt=bool(args.learnable_dwt),
-                   gate_type=args.gate, wavelet=args.wavelet).to(device)
+                   gate_type=args.gate, wavelet=args.wavelet,
+                   use_edge_refine=not args.no_edge_refine).to(device)
     n_params = count_parameters(model)
 
-    criterion = MGFusionLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma).to(device)
+    criterion = MGFusionLoss(alpha=args.alpha, beta=args.beta,
+                             gamma=args.gamma, delta=args.delta).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=config.lr_decay_epochs, gamma=config.lr_decay)
@@ -439,6 +445,11 @@ def main():
     ap.add_argument("--alpha", type=float, default=1.0, help="SSIM 损失权重")
     ap.add_argument("--beta", type=float, default=10.0, help="L1 损失权重")
     ap.add_argument("--gamma", type=float, default=5.0, help="梯度损失权重")
+    ap.add_argument("--delta", type=float, default=2.0,
+                    help="balance 损失权重（|L1(f,CT)-L1(f,MRI)|）。"
+                         "注意：像素平均使该项恰为 0，即平均是该权重的精确最优解")
+    ap.add_argument("--no-edge-refine", action="store_true",
+                    help="旁路 edge_refine 模块，检验其是否以牺牲源保真度换锐度")
     ap.add_argument("--select-metric", default="SSIM", choices=METRIC_KEYS,
                     help="据验证集选模用的指标")
     ap.add_argument("--val-interval", type=int, default=5,

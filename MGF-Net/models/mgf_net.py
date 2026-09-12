@@ -43,7 +43,8 @@ class MGFNet(nn.Module):
     """
 
     def __init__(self, in_channels=1, mid_channels=32, learnable_dwt=True,
-                 gate_type="residual_capped", wavelet="legacy"):
+                 gate_type="residual_capped", wavelet="legacy",
+                 use_edge_refine=True):
         super().__init__()
         if wavelet not in WAVELET_KINDS:
             raise ValueError(f"未知 wavelet={wavelet!r}，可选 {WAVELET_KINDS}")
@@ -64,7 +65,14 @@ class MGFNet(nn.Module):
 
         self.fusion = GatedFusionModule(in_ch=in_channels, mid_ch=mid_channels,
                                         gate_type=gate_type)
-        self.edge_refine = EdgeRefineModule(in_channels=in_channels)
+        # use_edge_refine=False 时旁路该模块。
+        # 动机：实测它把图像搬动 33.8/255（占值域 13%），同时把不同变换条件
+        # 之间的差异压缩 4.2–14.4 倍（28.9/255 → 2.2/255）。
+        # 而模型赢的 EN/SD/SF/Qabf 均**不参考源图**，输的 MI/CC/PSNR/VIF 均
+        # **衡量与源图的保真度**——需检验该模块是否以牺牲保真度换取锐度。
+        self.use_edge_refine = use_edge_refine
+        self.edge_refine = (EdgeRefineModule(in_channels=in_channels)
+                            if use_edge_refine else None)
 
     # ------------------------------------------------------------ 频域变换
     def decompose(self, x: torch.Tensor) -> dict:
@@ -115,6 +123,8 @@ class MGFNet(nn.Module):
             ct = ct[:, :, :H_in, :W_in]
             mri = mri[:, :, :H_in, :W_in]
 
+        if self.edge_refine is None:
+            return torch.clamp(fused_init, 0, 1)
         return self.edge_refine(fused_init, ct, mri)
 
 
