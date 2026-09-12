@@ -32,6 +32,7 @@ MGF-Net/data/*
 !MGF-Net/data/README.md
 !MGF-Net/data/dataset.py
 !MGF-Net/data/build_manifest.py
+!MGF-Net/data/make_cv_splits.py
 !MGF-Net/data/manifest_*.csv
 
 # ---------- 构建产物 ----------
