@@ -221,6 +221,7 @@ def run(args):
         "seed": args.seed,
         "epochs": args.epochs,
         "gate_type": args.gate,
+        "wavelet": args.wavelet,
         "learnable_dwt": bool(args.learnable_dwt),
         "mid_channels": args.mid_channels,
         "patch_size": args.patch_size,
@@ -250,6 +251,7 @@ def run(args):
     print("=" * 74)
     print(f"实验 {args.tag}")
     print(f"  门控      : {args.gate}")
+    print(f"  频域变换  : {args.wavelet}")
     print(f"  索引来源  : {data['source']}")
     print(f"  划分方式  : {args.split_key}")
     print(f"  种子      : {args.seed}   轮数: {args.epochs}   patch: {args.patch_size}")
@@ -273,7 +275,7 @@ def run(args):
 
     model = MGFNet(in_channels=1, mid_channels=args.mid_channels,
                    learnable_dwt=bool(args.learnable_dwt),
-                   gate_type=args.gate).to(device)
+                   gate_type=args.gate, wavelet=args.wavelet).to(device)
     n_params = count_parameters(model)
 
     criterion = MGFusionLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma).to(device)
@@ -343,6 +345,7 @@ def run(args):
             "val_score": best["score"],
             "select_metric": args.select_metric,
             "gate_type": args.gate,
+            "wavelet": args.wavelet,
             "learnable_dwt": bool(args.learnable_dwt),
             "mid_channels": args.mid_channels,
             "model_state_dict": best["state"],
@@ -350,10 +353,12 @@ def run(args):
         }, ckpt_path)
     else:
         torch.save({"epoch": args.epochs, "gate_type": args.gate,
+                    "wavelet": args.wavelet,
                     "model_state_dict": model.state_dict(), "config": cfg}, ckpt_path)
 
     # 用验证集选出的最优权重评价
-    results = {"tag": args.tag, "gate_type": args.gate, "seed": args.seed,
+    results = {"tag": args.tag, "gate_type": args.gate, "wavelet": args.wavelet,
+               "seed": args.seed,
                "best_epoch": best["epoch"], "best_val_score": best["score"],
                "n_params": n_params, "wall_seconds": wall,
                "checkpoint": os.path.relpath(ckpt_path, ROOT)}
@@ -374,6 +379,15 @@ def run(args):
         f = infer_full(model, load_u8(index[i]["ct"]), load_u8(index[i]["mri"]), device)
         Image.fromarray(np.clip(np.rint(f * 255), 0, 255).astype(np.uint8)).save(
             os.path.join(run_dir, "fused", f"test_{i}.png"))
+
+    # 训练后实测变换闭环（PR-LWT 应给出 ~1e-7；legacy 会显著更差）
+    try:
+        xt = to_tensor(load_u8(index[te_ids[0]]["ct"]), device)
+        max_err, rel_l2 = model.transform_roundtrip(xt)
+        results["transform_roundtrip"] = {"max_abs_err": max_err, "rel_l2": rel_l2}
+        print(f"变换闭环  : max|err|={max_err:.3e}  rel_L2={rel_l2:.3e}  ({args.wavelet})")
+    except Exception as e:  # noqa: BLE001
+        print(f"变换闭环测量失败: {e}")
 
     with open(os.path.join(run_dir, "results.json"), "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
@@ -398,6 +412,9 @@ def main():
     ap.add_argument("--tag", required=True, help="实验标识，输出到 experiments/runs/<tag>")
     ap.add_argument("--gate", default="residual_capped",
                     choices=["residual_capped", "neutral_sigmoid"])
+    ap.add_argument("--wavelet", default="legacy", choices=["legacy", "lifting"],
+                    help="legacy=旧的分离式可学习滤波器（无闭环保证）；"
+                         "lifting=PR-LWT（提升格式，可逆性由结构保证）")
     ap.add_argument("--split", default=os.path.join(ROOT, "splits", "ct_mri_screen_v1.json"))
     ap.add_argument("--manifest", default=os.path.join(ROOT, "data", "manifest_ct_mri.csv"),
                     help="逐图清单 CSV；存在则优先使用（含病例号）")

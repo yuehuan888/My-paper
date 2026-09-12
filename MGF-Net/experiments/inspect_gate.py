@@ -40,10 +40,11 @@ def main():
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = ck.get("config", {})
     gate = ck.get("gate_type", cfg.get("gate_type", "residual_capped"))
+    wavelet = ck.get("wavelet", cfg.get("wavelet", "legacy"))
     mid = ck.get("mid_channels", cfg.get("mid_channels", 32))
     ldwt = ck.get("learnable_dwt", cfg.get("learnable_dwt", True))
 
-    model = MGFNet(1, mid, learnable_dwt=ldwt, gate_type=gate)
+    model = MGFNet(1, mid, learnable_dwt=ldwt, gate_type=gate, wavelet=wavelet)
     model.load_state_dict(ck["model_state_dict"])
     model.eval()          # 必须：24 个 BN 层，train() 会给出完全失真的结果
 
@@ -56,7 +57,7 @@ def main():
     print("=" * 74)
     print(f"门控权重分布检查")
     print(f"  checkpoint : {os.path.basename(os.path.dirname(args.ckpt))}/{os.path.basename(args.ckpt)}")
-    print(f"  gate_type  : {gate}")
+    print(f"  gate_type  : {gate}      wavelet: {wavelet}")
     print(f"  训练 epoch : {ck.get('epoch')}   val_score: {ck.get('val_score')}")
     print("=" * 74)
     print(f"  {'图':<8}{'min':>9}{'q25':>9}{'中位':>9}{'q75':>9}{'max':>9}{'均值':>9}{'标准差':>9}")
@@ -75,7 +76,7 @@ def main():
             mri_t = torch.nn.functional.pad(mri_t, (0, pw, 0, ph), mode="reflect")
 
         with torch.no_grad():
-            ct_b, mri_b = model.dwt(ct_t), model.dwt(mri_t)
+            ct_b, mri_b = model.decompose(ct_t), model.decompose(mri_t)
             ws = []
             for name in model.fusion.band_names:
                 fb = getattr(model.fusion, f"fuse_{name}")
