@@ -68,25 +68,42 @@ python test.py
 .
 ├── MGF-Net/                          # 代码
 │   ├── models/
-│   │   ├── mgf_net.py                # 主模型
-│   │   ├── dwt_layer.py              # 多级小波分解 / 逆变换
+│   │   ├── mgf_net.py                # 主模型（wavelet / gate_type 双开关）
+│   │   ├── lifting_dwt.py            # ⭐ PR-LWT：可逆性由结构保证的可学习小波
+│   │   ├── dwt_layer.py              # 旧的分离式小波（保留作对照）
 │   │   ├── gated_fusion.py           # 跨模态门控融合 + 跨频段注意力
 │   │   └── edge_refine.py            # 边缘感知精炼
-│   ├── data/
-│   │   ├── dataset.py                # 数据加载与增强
-│   │   └── README.md                 # 数据集获取说明
 │   ├── utils/
-│   ├── losses.py                     # 损失函数
-│   ├── config.py                     # 配置
-│   ├── train.py                      # 训练（含实时可视化）
-│   ├── test.py                       # 测试评估
-│   ├── compare_baselines.py          # 与基线方法对比
-│   ├── generate_figures.py           # 结果可视化
+│   │   └── metrics.py                # ⭐ 10 项标准融合指标
+│   ├── tests/
+│   │   ├── test_metrics_invariants.py  # 指标 L0 不变量测试
+│   │   └── test_lifting_pr.py          # PR-LWT 完美重构验证
+│   ├── experiments/
+│   │   ├── run_experiment.py         # ⭐ 单实验运行器（固定种子、验证集选模）
+│   │   ├── aggregate.py              # 跨种子汇总
+│   │   └── inspect_gate.py           # 门控权重分布检查
+│   ├── data/
+│   │   ├── dataset.py                # 数据加载（显式 ID / 路径对）
+│   │   ├── build_manifest.py         # ⭐ 清单与病例级划分构建
+│   │   ├── manifest_ct_mri.csv       # 184 对逐图清单
+│   │   └── README.md                 # 数据集获取说明
+│   ├── splits/
+│   │   ├── ct_mri_case_v1.json       # ⭐ 病例级划分 + 切片级随机对照
+│   │   └── ct_mri_screen_v1.json     # 早期筛查划分（已过时）
+│   ├── evaluate.py                   # 批量评价 CLI
+│   ├── diagnose_step1.py             # 审计脚本
+│   ├── losses.py / config.py
+│   ├── train.py / test.py            # 旧入口（已被 experiments/ 取代）
+│   ├── compare_baselines.py / generate_figures.py
 │   ├── requirements.txt
-│   └── 工作进展报告_MGF-Net.md        # v1/v2 设计与实验结果
+│   └── 工作进展报告_MGF-Net.md        # 历史文档（数字与代码不符，见实验记录 §9.2）
 │
-├── 发表路线与实验计划_2026-09-12.md    # ⭐ 当前路线图，从这里开始读
-│
+├── MGF-Net_实验记录_2026-09-12.md     # ⭐⭐ 本轮完整记录，从这里开始读
+├── MGF-Net_审计报告_Step1_2026-09-12.md
+├── MGF-Net_实验报告_门控对照_2026-09-12.md
+├── 对比协议调研_2026-09-12.md         # 领域对比协议（107-agent 调研）
+├── 发表路线与实验计划_2026-09-12.md    # 路线图（已被修订版替代）
+├── 发表路线与实验计划_2026-09-12_修订版.md
 ├── 前沿调研报告_图像融合2024-2026.md
 ├── 前沿调研报告_图像融合2024-2026_复核补充版.md
 ├── 图像融合顶刊论文及源码汇总_2022-2026.md
@@ -107,9 +124,21 @@ python test.py
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| Phase A | 补齐标准评价协议（8 项指标）、固定数据划分、真实基线对比 | 🚧 进行中 |
-| Phase B | 核心模块重构（完美重构约束的可学习小波）+ 损失函数修正 + 消融实验 | ⏳ 待开始 |
-| Phase C | 论文撰写与投稿 | ⏳ 待开始 |
+| Phase A | 标准评价协议、可追溯的数据清单与病例级划分 | ✅ 完成 |
+| Phase B | 核心模块重构（PR-LWT）+ 门控修正 + 消融实验 | 🚧 进行中 |
+| Phase C | 真实基线对比、论文撰写与投稿 | ⏳ 待开始 |
+
+### 已有结果（详见 `MGF-Net_实验记录_2026-09-12.md`）
+
+- **门控饱和**：原式 `tanh(g)·0.4` 使 99.13% 的像素贴在 +0.4 上限，门控退化为常数。
+  改为中性 sigmoid 门控后权重铺满 [0.007, 0.977]，10 项指标赢 9 项。
+- **PR-LWT**：变换闭环相对误差由 `6.09e-01` 降至 `1.40e-07`，参数量还少 40 个。
+  并发现"有 PR 保证 ≠ 数值稳定"，需对提升滤波器参数做有界化。
+- **数据泄漏**：ASFE-Fusion 数据集的 ID 含病例结构（184 张 = 10 病例 × 16–21 层）。
+  复现领域惯例的切片级随机划分后，10 个病例中 9 个跨训练/测试集。
+
+> ⚠️ 以上均为**机制层**验证。**融合质量是否改善尚未验证**——
+> PR 只保证"系数未被修改"时的闭环，而融合恰恰要修改系数。
 
 ---
 
