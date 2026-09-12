@@ -195,6 +195,9 @@ def q3_gate_bias(model):
     print("  等价于 fused = (1-w)*ct + w*mri")
     print("  => CT 系数 (1-w) ∈ [0.6, 1.4] ；MRI 系数 w ∈ [-0.4, 0.4]\n")
 
+    # ⚠️ 必须 eval()：模型含 24 个 BatchNorm2d 层，train() 模式会用批次统计
+    #    而非训练时累积的 running statistics，导致门控权重完全失真。
+    model.eval()
     with torch.no_grad():
         ct_b = model.dwt(ct)
         mri_b = model.dwt(mri)
@@ -233,6 +236,7 @@ def q4_ssim_protocol(model):
 
         ct_t = torch.from_numpy(ct)[None, None]
         mri_t = torch.from_numpy(mri)[None, None]
+        model.eval()                      # 同上，必须 eval()
         with torch.no_grad():
             fused = model(ct_t, mri_t).squeeze().numpy()
         fused = (fused + 1.0) / 2.0 if fused.min() < 0 else fused
