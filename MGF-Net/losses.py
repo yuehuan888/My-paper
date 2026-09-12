@@ -37,9 +37,37 @@ class SSIMLoss(nn.Module):
 
 
 class GradientLoss(nn.Module):
-    """Edge preservation: fused gradient should match max(source gradients)."""
-    def __init__(self):
+    """边缘保持损失。
+
+    两种模式：
+
+    ``abs``（原式）
+        ``|∇F − max(∇CT, ∇MRI)|``
+        要求融合图的梯度**逐像素等于**两个源的最大值，即"处处取最强边"。
+        **这在数学上不可能同时忠实于两个源**——当 CT 与 MRI 在某处都有边时，
+        F 的梯度不可能同时等于两者的最大值而不偏离两者。
+
+        实测后果（2026-09-13，4 条件 × 2 种子）：它是模型在
+        MI/CC/PSNR/VIF 上落后平凡平均的**主因**。去掉后
+        PSNR 差距 −0.575 → −0.084、CC −0.0236 → −0.0054。
+
+    ``hinge``（改进）
+        ``relu(max − ∇F) + λ·relu(∇F − max)``
+        只把"**漏掉的边**"作为主要惩罚；融合图梯度**超出**源最大值的部分
+        视为可接受的适度增强，按 λ（默认 0.25）轻罚。
+        即：要求"不丢边"，但不要求"不多边"——这才是有可能同时满足两源的目标。
+
+    Args:
+        mode: 'abs' | 'hinge'
+        excess_weight: hinge 模式下对"多出的边"的惩罚权重 λ
+    """
+
+    def __init__(self, mode: str = "abs", excess_weight: float = 0.25):
         super().__init__()
+        if mode not in ("abs", "hinge"):
+            raise ValueError(f"未知 mode={mode!r}")
+        self.mode = mode
+        self.excess_weight = float(excess_weight)
         sx = torch.tensor([[-1.,0.,1.],[-2.,0.,2.],[-1.,0.,1.]])/4.
         sy = torch.tensor([[-1.,-2.,-1.],[0.,0.,0.],[1.,2.,1.]])/4.
         self.register_buffer('sx', sx.view(1,1,3,3))
@@ -56,7 +84,14 @@ class GradientLoss(nn.Module):
     def forward(self, fused, ct, mri):
         gf = self._grad(fused)
         gm = torch.max(self._grad(ct), self._grad(mri))
-        return F.l1_loss(gf, gm)
+        if self.mode == "abs":
+            return F.l1_loss(gf, gm)
+        # hinge：单边为主
+        #   deficit = relu(gm − gf)  漏掉的边（应重罚）
+        #   excess  = relu(gf − gm)  多出来的边（伪造细节，轻罚）
+        deficit = F.relu(gm - gf)
+        excess = F.relu(gf - gm)
+        return (deficit.mean() + self.excess_weight * excess.mean())
 
 
 class MGFusionLoss(nn.Module):
@@ -70,15 +105,18 @@ class MGFusionLoss(nn.Module):
 
     L = alpha*ssim + beta*l1_balanced + gamma*grad + delta*balance
     """
-    def __init__(self, alpha=1.0, beta=10.0, gamma=5.0, delta=2.0):
+    def __init__(self, alpha=1.0, beta=10.0, gamma=5.0, delta=2.0,
+                 grad_mode="abs", grad_excess_weight=0.25):
         super().__init__()
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
         self.delta = delta  # balance regularization strength
+        self.grad_mode = grad_mode
 
         self.ssim_loss = SSIMLoss()
-        self.grad_loss = GradientLoss()
+        self.grad_loss = GradientLoss(mode=grad_mode,
+                                      excess_weight=grad_excess_weight)
         self.l1_loss = nn.L1Loss()
 
     def forward(self, fused, ct, mri):

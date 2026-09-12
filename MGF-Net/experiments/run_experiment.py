@@ -194,6 +194,16 @@ def run(args):
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # LR milestones 按轮数**比例缩放**。
+    # config 原硬编码 [40,70,90]，但只跑 50 轮时 70/90 永不触发——
+    # 实测 86% 的运行在末 10 轮损失斜率仍为负（均值 −0.00083/轮），即未收敛。
+    # 默认取 50%/80%/90%，与原配置在 100 轮时等价。
+    if args.lr_milestones:
+        milestones = [int(x) for x in args.lr_milestones.split(",")]
+    else:
+        milestones = [max(1, int(round(args.epochs * f))) for f in (0.5, 0.8, 0.9)]
+        milestones = sorted(set(m for m in milestones if 0 < m < args.epochs))
+
     data = build_index(args.split, args.manifest)
     index, split = data["index"], data["split"]
 
@@ -235,7 +245,9 @@ def run(args):
         "learning_rate": args.learning_rate,
         "lr_milestones": milestones,
         "loss": {"alpha_ssim": args.alpha, "beta_l1": args.beta,
-                 "gamma_grad": args.gamma, "delta_balance": args.delta},
+                 "gamma_grad": args.gamma, "delta_balance": args.delta,
+                 "grad_mode": args.grad_mode,
+                 "grad_excess_weight": args.grad_excess_weight},
         "use_edge_refine": args.edge_refine,
         "split_file": os.path.relpath(args.split, ROOT),
         "split_key": args.split_key,
@@ -262,6 +274,8 @@ def run(args):
     print(f"  门控      : {args.gate}")
     print(f"  频域变换  : {args.wavelet}")
     print(f"  LR衰减点  : {milestones}  (共 {args.epochs} 轮)")
+    print(f"  梯度损失  : {args.grad_mode}"
+          + (f" (excess_weight={args.grad_excess_weight})" if args.grad_mode=="hinge" else ""))
     print(f"  edge_refine: {'开启' if args.edge_refine else '关闭（默认）'}"
           f"    balance权重: {args.delta}   梯度权重: {args.gamma}")
     print(f"  索引来源  : {data['source']}")
@@ -293,18 +307,10 @@ def run(args):
     n_params = count_parameters(model)
 
     criterion = MGFusionLoss(alpha=args.alpha, beta=args.beta,
-                             gamma=args.gamma, delta=args.delta).to(device)
+                             gamma=args.gamma, delta=args.delta,
+                             grad_mode=args.grad_mode,
+                             grad_excess_weight=args.grad_excess_weight).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-    # LR milestones 按轮数**比例缩放**。
-    # 原 config 硬编码 [40,70,90]，但只跑 50 轮时 70/90 永不触发——
-    # 实测 86% 的运行在末 10 轮损失斜率仍为负（均值 −0.00083/轮），即未收敛。
-    # 默认取 50%/80%/90% 三个下降点，与原配置在 100 轮时等价。
-    if args.lr_milestones:
-        milestones = [int(x) for x in args.lr_milestones.split(",")]
-    else:
-        milestones = [max(1, int(round(args.epochs * f)))
-                      for f in (0.5, 0.8, 0.9)]
-        milestones = sorted(set(m for m in milestones if 0 < m < args.epochs))
     scheduler = optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=milestones, gamma=config.lr_decay)
     scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
@@ -463,6 +469,12 @@ def main():
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--oversample", type=int, default=25)
     ap.add_argument("--learning-rate", type=float, default=1e-3)
+    ap.add_argument("--grad-mode", default="abs", choices=["abs", "hinge"],
+                    help="梯度损失模式。abs=原式 |∇F−max|，要求处处取最强边，"
+                         "数学上不可能同时忠实于两个源（实测为保真度差距主因）；"
+                         "hinge=只重罚'漏掉的边'，允许适度超出")
+    ap.add_argument("--grad-excess-weight", type=float, default=0.25,
+                    help="hinge 模式下对'多出的边'的惩罚权重")
     ap.add_argument("--lr-milestones", default=None,
                     help="逗号分隔的 epoch 数；默认按轮数比例取 50%%/80%%/90%%")
     ap.add_argument("--alpha", type=float, default=1.0, help="SSIM 损失权重")
