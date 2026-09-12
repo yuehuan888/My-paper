@@ -44,7 +44,7 @@ def load_runs(pattern="runs/*/results.json"):
 def main():
     ap = argparse.ArgumentParser(description="汇总实验结果")
     ap.add_argument("--group-by", default="gate_type",
-                    choices=["gate_type", "learnable_dwt", "split_key", "eval_split", "wavelet", "tag"])
+                    choices=["gate_type", "learnable_dwt", "split_key", "eval_split", "wavelet", "label", "tag"])
     ap.add_argument("--split-name", default="test", choices=["test", "val"])
     ap.add_argument("--exclude", default="smoke",
                     help="逗号分隔的 tag 子串，匹配则排除")

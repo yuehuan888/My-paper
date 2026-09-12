@@ -216,6 +216,7 @@ def run(args):
 
     cfg = {
         "tag": args.tag,
+        "label": args.label,
         "created": datetime.now(timezone.utc).isoformat(),
         "code_version": code_version(),
         "seed": args.seed,
@@ -410,6 +411,8 @@ def run(args):
 def main():
     ap = argparse.ArgumentParser(description="MGF-Net 单实验运行器")
     ap.add_argument("--tag", required=True, help="实验标识，输出到 experiments/runs/<tag>")
+    ap.add_argument("--label", default=None,
+                    help="实验条件标签，用于跨种子分组汇总（默认取 tag 去掉 _s<数字> 后缀）")
     ap.add_argument("--gate", default="residual_capped",
                     choices=["residual_capped", "neutral_sigmoid"])
     ap.add_argument("--wavelet", default="legacy", choices=["legacy", "lifting"],
@@ -441,6 +444,9 @@ def main():
     ap.add_argument("--val-interval", type=int, default=5,
                     help="每多少 epoch 跑一次验证")
     args = ap.parse_args()
+    import re as _re
+    if args.label is None:
+        args.label = _re.sub(r"_s\d+$", "", args.tag)
     if args.eval_split is None:
         args.eval_split = args.split_key
     run(args)
