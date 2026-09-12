@@ -26,9 +26,12 @@ class MGFNet(nn.Module):
         in_channels: 1 for grayscale medical images
         mid_channels: channels inside FusionBlocks (default 32)
         learnable_dwt: train wavelet filters end-to-end
+        gate_type: 'residual_capped'（v2 原式）| 'neutral_sigmoid'（对照）
+                   详见 models/gated_fusion.py
     """
 
-    def __init__(self, in_channels=1, mid_channels=32, learnable_dwt=True):
+    def __init__(self, in_channels=1, mid_channels=32, learnable_dwt=True,
+                 gate_type="residual_capped"):
         super().__init__()
 
         # 2-level frequency decomposition → 7 subbands
@@ -36,7 +39,8 @@ class MGFNet(nn.Module):
         self.idwt = MultiLevelIDWT(learnable=learnable_dwt)
 
         # Residual fusion per band + cross-band attention
-        self.fusion = GatedFusionModule(in_ch=in_channels, mid_ch=mid_channels)
+        self.fusion = GatedFusionModule(in_ch=in_channels, mid_ch=mid_channels,
+                                        gate_type=gate_type)
 
         # Edge-aware refinement (from v1)
         self.edge_refine = EdgeRefineModule(in_channels=in_channels)

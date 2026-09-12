@@ -61,3 +61,25 @@ s2_recofuse.json
 *.docx
 # 上述 .docx 的生成脚本（产物已排除，脚本成为孤岛）
 MGF-Net/generate_report*.js
+
+# ---------- 实验产物 ----------
+# 融合结果图与权重不入库（可由 run_experiment.py 重新生成）；
+# 但保留 config.json / results.json / history.json，便于追溯每次实验的配置与指标
+MGF-Net/experiments/runs/*/fused/
+
+# ---------- 调研 agent 的临时抓取产物 ----------
+# 这些是 workflow agent 运行时落到工作目录的中间文件（论文 PDF / HTML / 文本转储），
+# 不属于项目产物。保留在本地供查阅，但不入库。
+# 教训：agent 的工具调用默认以 cwd 为落盘位置，跑工作流前应先指定临时目录。
+MGF-Net/_verify/
+MGF-Net/_*.txt
+MGF-Net/ecfusion.pdf
+MGF-Net/ecfusion.txt
+MGF-Net/hmif.tar.gz
+MGF-Net/ov.txt
+MGF-Net/xm.txt
+*.html
+/tbl*.html
+ecf.txt
+ecf_raw.html
+MGF-Net/nature*.txt

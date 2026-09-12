@@ -22,7 +22,7 @@ class MedicalFusionDataset(Dataset):
     """
 
     def __init__(self, data_path, mode='dir', patch_size=128, is_training=True,
-                 source1_name='ct', source2_name='mri', oversample=20):
+                 source1_name='ct', source2_name='mri', oversample=20, ids=None):
         self.data_path = data_path
         self.mode = mode
         self.patch_size = patch_size
@@ -32,7 +32,7 @@ class MedicalFusionDataset(Dataset):
         if mode == 'h5':
             self._load_h5(data_path)
         else:
-            self._load_dir(data_path, source1_name, source2_name)
+            self._load_dir(data_path, source1_name, source2_name, ids=ids)
 
     def _load_h5(self, path):
         """Load data from H5 file."""
@@ -43,21 +43,53 @@ class MedicalFusionDataset(Dataset):
             self.data = np.transpose(self.data, (0, 3, 2, 1))
         print(f"Loaded {len(self.data)} image pairs from H5, shape: {self.data.shape}")
 
-    def _load_dir(self, path, s1_name, s2_name):
-        """Load paired images from ct/ and mri/ subdirectories."""
+    def _load_dir(self, path, s1_name, s2_name, ids=None):
+        """从 ct/ 与 mri/ 子目录加载配对图像。
+
+        配对方式（2026-09 修订，见 `MGF-Net_审计报告_Step1`）：
+          1. 若给定 `ids`，按**显式 ID** 配对——这是推荐且可复现的方式。
+          2. 否则回退到"两目录各自 sorted 后 zip"，但**不再静默截断**：
+             两侧文件集合必须完全一致，否则直接报错。
+
+        原实现用 `zip(files1, files2)` 且不校验，当两侧文件数不同（如
+        ct 有 {1,2,3,5}、mri 有 {1,2,3,4}）时会静默错配并把多余的丢掉，
+        产生"看起来能跑、但配错了图"的假结果。
+        """
+        exts = ('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')
         s1_dir = os.path.join(path, s1_name)
         s2_dir = os.path.join(path, s2_name)
 
-        files1 = sorted([f for f in os.listdir(s1_dir) if f.lower().endswith(('.png', '.jpg', '.tif', '.bmp'))])
-        files2 = sorted([f for f in os.listdir(s2_dir) if f.lower().endswith(('.png', '.jpg', '.tif', '.bmp'))])
+        def _scan(d):
+            if not os.path.isdir(d):
+                raise FileNotFoundError(f"目录不存在: {d}")
+            return sorted(os.path.splitext(f)[0]
+                          for f in os.listdir(d) if f.lower().endswith(exts))
 
-        self.pairs = []
-        for f1, f2 in zip(files1, files2):
-            self.pairs.append((
-                os.path.join(s1_dir, f1),
-                os.path.join(s2_dir, f2)
-            ))
-        print(f"Loaded {len(self.pairs)} image pairs from directory")
+        def _resolve(d, stem):
+            for e in exts:
+                p = os.path.join(d, stem + e)
+                if os.path.exists(p):
+                    return p
+            raise FileNotFoundError(f"在 {d} 中找不到 {stem}")
+
+        if ids is not None:
+            missing = [i for i in ids if i not in _scan(s1_dir) or i not in _scan(s2_dir)]
+            if missing:
+                raise ValueError(f"以下 ID 在 ct/ 或 mri/ 中缺失: {missing}")
+            self.ids = list(ids)
+        else:
+            set1, set2 = set(_scan(s1_dir)), set(_scan(s2_dir))
+            if set1 != set2:
+                raise ValueError(
+                    "ct/ 与 mri/ 的文件集合不一致，拒绝静默配对。\n"
+                    f"  仅 ct 有: {sorted(set1 - set2)}\n"
+                    f"  仅 mri 有: {sorted(set2 - set1)}\n"
+                    "请修正数据，或显式传入 ids 参数。"
+                )
+            self.ids = sorted(set1)
+
+        self.pairs = [(_resolve(s1_dir, i), _resolve(s2_dir, i)) for i in self.ids]
+        print(f"Loaded {len(self.pairs)} image pairs (显式 ID 配对)")
 
     def _augment(self, ct, mri):
         """Apply random augmentation to paired images."""
