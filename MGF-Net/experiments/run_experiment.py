@@ -199,8 +199,12 @@ def run(args):
 
     # split-key 决定用病例级划分还是"切片级随机"对照
     def block_of(key):
-        return (split["slice_level_random"]["splits"] if key == "slice_level_random"
-                else split["splits"])
+        if key == "slice_level_random":
+            return split["slice_level_random"]["splits"]
+        # 交叉验证划分：folds 是折列表，用 --fold 选折
+        if "folds" in split and args.fold is not None:
+            return split["folds"][args.fold]["splits"]
+        return split["splits"]
 
     train_block = block_of(args.split_key)
     # eval-split 可与 train 不同：用于"用泄漏划分训练、在干净留出集上评价"，
@@ -235,6 +239,7 @@ def run(args):
         "split_file": os.path.relpath(args.split, ROOT),
         "split_key": args.split_key,
         "eval_split": args.eval_split,
+        "fold": args.fold,
         "split_ids": {"train": tr_ids, "val": va_ids, "test": te_ids},
         "split_cases": {
             "train": sorted({index[i].get("case_id") for i in tr_ids} - {None}),
@@ -258,7 +263,8 @@ def run(args):
     print(f"  edge_refine: {'开启' if args.edge_refine else '关闭（默认）'}"
           f"    balance权重: {args.delta}   梯度权重: {args.gamma}")
     print(f"  索引来源  : {data['source']}")
-    print(f"  划分方式  : {args.split_key}")
+    print(f"  划分方式  : {args.split_key}" +
+          (f"  折={args.fold}" if args.fold is not None else ""))
     print(f"  种子      : {args.seed}   轮数: {args.epochs}   patch: {args.patch_size}")
     print(f"  规模      : train={len(tr_ids)}  val={len(va_ids)}  test={len(te_ids)}")
     print(f"  训练病例  : {cfg['split_cases']['train']}")
@@ -427,6 +433,9 @@ def main():
     ap.add_argument("--split", default=os.path.join(ROOT, "splits", "ct_mri_screen_v1.json"))
     ap.add_argument("--manifest", default=os.path.join(ROOT, "data", "manifest_ct_mri.csv"),
                     help="逐图清单 CSV；存在则优先使用（含病例号）")
+    ap.add_argument("--fold", type=int, default=None,
+                    help="交叉验证划分文件中选第几折（该文件须含 folds 字段）。"
+                         "见 data/make_cv_splits.py")
     ap.add_argument("--split-key", default="splits",
                     choices=["splits", "slice_level_random"],
                     help="训练用划分：splits=病例级；slice_level_random=切片级随机（泄漏对照）")
