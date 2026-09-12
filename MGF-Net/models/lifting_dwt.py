@@ -206,14 +206,14 @@ class LiftingWavelet2D(nn.Module):
             HL  = 高.high ∘ 宽.low      HH = 高.high ∘ 宽.high
         """
         Lv, Hv = self.vert.forward_1d(x, axis=-2, normalize=normalize)     # 高度
-        LL, HL = self.horiz.forward_1d(Lv, axis=-1, normalize=normalize)   # 宽度
-        LH, HH = self.horiz.forward_1d(Hv, axis=-1, normalize=normalize)
+        LL, LH = self.horiz.forward_1d(Lv, axis=-1, normalize=normalize)   # 高度低通 → 宽低 LL / 宽高 LH
+        HL, HH = self.horiz.forward_1d(Hv, axis=-1, normalize=normalize)   # 高度高通 → 宽低 HL / 宽高 HH
         return LL, LH, HL, HH
 
     def inverse(self, LL, LH, HL, HH, normalize: bool = True) -> torch.Tensor:
         """forward 的严格逆，按**相反顺序**执行（先宽度、后高度）。"""
-        Lv = self.horiz.inverse_1d(LL, HL, axis=-1, normalize=normalize)
-        Hv = self.horiz.inverse_1d(LH, HH, axis=-1, normalize=normalize)
+        Lv = self.horiz.inverse_1d(LL, LH, axis=-1, normalize=normalize)
+        Hv = self.horiz.inverse_1d(HL, HH, axis=-1, normalize=normalize)
         return self.vert.inverse_1d(Lv, Hv, axis=-2, normalize=normalize)
 
 

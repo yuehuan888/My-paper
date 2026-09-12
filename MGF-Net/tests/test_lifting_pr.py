@@ -156,8 +156,8 @@ def main():
         return (e + o) / SQRT2, (o - e) / SQRT2
 
     hL, hH = haar1d(x, -2)         # 高度：低通 / 高通
-    eLL, eHL = haar1d(hL, -1)      # 高度低通 再沿宽度 → LL / HL
-    eLH, eHH = haar1d(hH, -1)      # 高度高通 再沿宽度 → LH / HH
+    eLL, eLH = haar1d(hL, -1)      # 高度低通 再沿宽度 → LL / LH
+    eHL, eHH = haar1d(hH, -1)      # 高度高通 再沿宽度 → HL / HH
 
     for name, got, exp in [("LL", LL, eLL), ("LH", LH, eLH),
                            ("HL", HL, eHL), ("HH", HH, eHH)]:
