@@ -27,8 +27,12 @@ MGF-Net/outputs/
 
 # ---------- 数据集（体积大，且为公开数据集，见 MGF-Net/data/README.md） ----------
 MGF-Net/data/*
+# 例外：数据集本身不入库，但**清单与构建脚本**必须入库——
+# 它们是《发表路线与实验计划》要求的"可追溯划分"凭据
 !MGF-Net/data/README.md
 !MGF-Net/data/dataset.py
+!MGF-Net/data/build_manifest.py
+!MGF-Net/data/manifest_*.csv
 
 # ---------- 构建产物 ----------
 __pycache__/
