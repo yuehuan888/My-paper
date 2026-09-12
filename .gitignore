@@ -42,7 +42,8 @@ MGF-Net/docx_unpacked/
 
 # ---------- 本地工具链 / 编辑器 ----------
 .claude/
-.workbuddy/
+# 通配以覆盖 .workbuddy/、.workbuddy-ai/ 及后续可能出现的变体
+.workbuddy*/
 .vscode/
 .idea/
 .DS_Store
