@@ -21,15 +21,25 @@ class MedicalFusionDataset(Dataset):
     - Directory-based paired image loading
     """
 
-    def __init__(self, data_path, mode='dir', patch_size=128, is_training=True,
-                 source1_name='ct', source2_name='mri', oversample=20, ids=None):
+    def __init__(self, data_path=None, mode='dir', patch_size=128, is_training=True,
+                 source1_name='ct', source2_name='mri', oversample=20, ids=None,
+                 pairs=None):
+        """
+        Args:
+            pairs: 显式路径对 [(path_a, path_b), ...]。给定则忽略 data_path，
+                   用于按 manifest 精确指定每个划分用到哪些图。
+        """
         self.data_path = data_path
         self.mode = mode
         self.patch_size = patch_size
         self.is_training = is_training
         self.oversample = oversample if is_training else 1
 
-        if mode == 'h5':
+        if pairs is not None:
+            self.pairs = [(str(a), str(b)) for a, b in pairs]
+            self.ids = [os.path.splitext(os.path.basename(a))[0] for a, _ in self.pairs]
+            print(f"Loaded {len(self.pairs)} image pairs (显式路径对)")
+        elif mode == 'h5':
             self._load_h5(data_path)
         else:
             self._load_dir(data_path, source1_name, source2_name, ids=ids)

@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -95,38 +96,52 @@ def dir_hash(path: str) -> str:
 
 
 # ------------------------------------------------------------------ 数据索引
-def build_index(split_path: str) -> dict:
-    """把 data/train 与 data/test 合并成一个 {id: (ct_path, mri_path)} 视图。
+def build_index(split_path: str, manifest_path: str | None = None) -> dict:
+    """构建 {id: (ct_path, mri_path)} 索引。
 
-    当前数据分散在两个目录，而划分是按 ID 指定的，所以需要合并后按 ID 取。
+    优先用 manifest CSV（可追溯、含病例号）；没有则回退到扫描 data/train 与
+    data/test——后者只适用于早期的小规模筛查数据。
+
+    split 文件里可能同时含 splits（病例级）与 slice_level_random（切片级随机
+    对照），用 --split-key 选择。
     """
     with open(split_path, encoding="utf-8") as f:
         split = json.load(f)
 
     index = {}
-    for sub in ["train", "test"]:
-        for mod in ["ct", "mri"]:
-            d = os.path.join(ROOT, "data", sub, mod)
-            if not os.path.isdir(d):
-                continue
-            for fn in os.listdir(d):
-                stem, ext = os.path.splitext(fn)
-                if ext.lower() not in IMG_EXTS:
+    if manifest_path and os.path.exists(manifest_path):
+        with open(manifest_path, encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                index[row["pair_id"]] = {
+                    "ct": os.path.join(ROOT, row["path_a"]),
+                    "mri": os.path.join(ROOT, row["path_b"]),
+                    "case_id": int(row["case_id"]),
+                    "slice_id": int(row["slice_id"]),
+                }
+        src = f"manifest:{os.path.relpath(manifest_path, ROOT)}"
+    else:
+        for sub in ["train", "test"]:
+            for mod in ["ct", "mri"]:
+                d = os.path.join(ROOT, "data", sub, mod)
+                if not os.path.isdir(d):
                     continue
-                index.setdefault(stem, {})[mod] = os.path.join(d, fn)
+                for fn in os.listdir(d):
+                    stem, ext = os.path.splitext(fn)
+                    if ext.lower() in IMG_EXTS:
+                        index.setdefault(stem, {})[mod] = os.path.join(d, fn)
+        src = "扫描 data/train 与 data/test"
 
-    ids = sorted(index)
-    incomplete = [i for i in ids if "ct" not in index[i] or "mri" not in index[i]]
-    if incomplete:
-        raise ValueError(f"以下 ID 缺 ct 或 mri: {incomplete}")
+    for i, v in index.items():
+        for p in (v.get("ct"), v.get("mri")):
+            if not p or not os.path.exists(p):
+                raise FileNotFoundError(f"ID {i} 的图片不存在: {p}")
 
-    # 校验划分里提到的 ID 都存在
-    for k, v in split["splits"].items():
+    for k, v in split.get("splits", {}).items():
         missing = [i for i in v if i not in index]
         if missing:
-            raise ValueError(f"划分 {k} 中的 ID 在数据中不存在: {missing}")
+            raise ValueError(f"划分 {k} 中的 ID 在数据中不存在: {missing[:10]}")
 
-    return {"index": index, "split": split, "all_ids": ids}
+    return {"index": index, "split": split, "source": src}
 
 
 def load_u8(path: str) -> np.ndarray:
@@ -179,11 +194,22 @@ def run(args):
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    data = build_index(args.split)
+    data = build_index(args.split, args.manifest)
     index, split = data["index"], data["split"]
-    tr_ids = split["splits"]["train"]
-    va_ids = split["splits"].get("val", [])
-    te_ids = split["splits"]["test"]
+
+    # split-key 决定用病例级划分还是"切片级随机"对照
+    def block_of(key):
+        return (split["slice_level_random"]["splits"] if key == "slice_level_random"
+                else split["splits"])
+
+    train_block = block_of(args.split_key)
+    # eval-split 可与 train 不同：用于"用泄漏划分训练、在干净留出集上评价"，
+    # 直接量化数据泄漏带来的虚高。默认与 split-key 一致。
+    eval_block = block_of(args.eval_split)
+
+    tr_ids = train_block["train"]
+    va_ids = train_block.get("val", [])
+    te_ids = eval_block["test"]
 
     run_dir = os.path.join(HERE, "runs", args.tag)
     os.makedirs(os.path.join(run_dir, "fused"), exist_ok=True)
@@ -203,10 +229,18 @@ def run(args):
         "learning_rate": args.learning_rate,
         "loss": {"alpha_ssim": args.alpha, "beta_l1": args.beta, "gamma_grad": args.gamma},
         "split_file": os.path.relpath(args.split, ROOT),
+        "split_key": args.split_key,
+        "eval_split": args.eval_split,
         "split_ids": {"train": tr_ids, "val": va_ids, "test": te_ids},
+        "split_cases": {
+            "train": sorted({index[i].get("case_id") for i in tr_ids} - {None}),
+            "val": sorted({index[i].get("case_id") for i in va_ids} - {None}),
+            "test": sorted({index[i].get("case_id") for i in te_ids} - {None}),
+        },
+        "index_source": data["source"],
+        "manifest": (os.path.relpath(args.manifest, ROOT)
+                     if os.path.exists(args.manifest) else None),
         "select_metric": args.select_metric,
-        "data_hash": {"data/train/ct": dir_hash(os.path.join(ROOT, "data/train/ct")),
-                      "data/test/ct": dir_hash(os.path.join(ROOT, "data/test/ct"))},
         "device": str(device),
         "torch": torch.__version__,
     }
@@ -216,17 +250,23 @@ def run(args):
     print("=" * 74)
     print(f"实验 {args.tag}")
     print(f"  门控      : {args.gate}")
+    print(f"  索引来源  : {data['source']}")
+    print(f"  划分方式  : {args.split_key}")
     print(f"  种子      : {args.seed}   轮数: {args.epochs}   patch: {args.patch_size}")
-    print(f"  划分      : train={tr_ids}  val={va_ids}  test={te_ids}")
+    print(f"  规模      : train={len(tr_ids)}  val={len(va_ids)}  test={len(te_ids)}")
+    print(f"  训练病例  : {cfg['split_cases']['train']}")
+    print(f"  测试病例  : {cfg['split_cases']['test']}")
+    if set(cfg["split_cases"]["train"]) & set(cfg["split_cases"]["test"]):
+        print(f"  ⚠️ 训练与测试共享病例: {sorted(set(cfg['split_cases']['train']) & set(cfg['split_cases']['test']))}")
     print(f"  选模指标  : {args.select_metric}（基于验证集）")
     print(f"  代码版本  : {cfg['code_version']}")
     print("=" * 74)
 
-    # 训练集
+    # 训练集：按 manifest 显式路径对构建
     train_ds = MedicalFusionDataset(
-        data_path=os.path.join(ROOT, "data", "train"), mode="dir",
-        patch_size=args.patch_size, is_training=True,
-        oversample=args.oversample, ids=tr_ids,
+        mode="dir", patch_size=args.patch_size, is_training=True,
+        oversample=args.oversample,
+        pairs=[(index[i]["ct"], index[i]["mri"]) for i in tr_ids],
     )
     train_dl = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                           num_workers=0, pin_memory=True, drop_last=True)
@@ -359,6 +399,15 @@ def main():
     ap.add_argument("--gate", default="residual_capped",
                     choices=["residual_capped", "neutral_sigmoid"])
     ap.add_argument("--split", default=os.path.join(ROOT, "splits", "ct_mri_screen_v1.json"))
+    ap.add_argument("--manifest", default=os.path.join(ROOT, "data", "manifest_ct_mri.csv"),
+                    help="逐图清单 CSV；存在则优先使用（含病例号）")
+    ap.add_argument("--split-key", default="splits",
+                    choices=["splits", "slice_level_random"],
+                    help="训练用划分：splits=病例级；slice_level_random=切片级随机（泄漏对照）")
+    ap.add_argument("--eval-split", default=None,
+                    choices=[None, "splits", "slice_level_random"],
+                    help="评价用测试集，默认与 --split-key 相同。"
+                         "设为 splits 可让泄漏模型在干净留出集上评价，用于量化泄漏")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--learnable-dwt", type=int, default=1, choices=[0, 1])
@@ -375,6 +424,8 @@ def main():
     ap.add_argument("--val-interval", type=int, default=5,
                     help="每多少 epoch 跑一次验证")
     args = ap.parse_args()
+    if args.eval_split is None:
+        args.eval_split = args.split_key
     run(args)
 
 
