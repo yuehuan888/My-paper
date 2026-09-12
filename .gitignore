@@ -1,0 +1,62 @@
+# ============================================================
+#  MGF-Net — 版本控制排除规则
+#  原则：只跟踪「源代码 + 文档 + 配置」；训练产物、数据集、
+#        第三方材料一律排除（理由见各行注释）
+# ============================================================
+
+# ---------- 第三方材料（版权原因，禁止上传） ----------
+# 22 篇他人论文 PDF，约 304MB
+前沿论文下载/
+# EMFusion 官方代码与预训练权重（Xu & Ma, Information Fusion 2021）
+EMFusion/
+emfusion_unpacked/
+# 他人论文原文
+EMFusion An unsupervised enhanced medical image fusion network.pdf
+# 从他人仓库复制的 README
+wavefusion_readme.md
+# 论文下载辅助脚本（指向上述第三方材料）
+dl_parallel.ps1
+resume_dl.ps1
+
+# ---------- 训练产物（可由代码重新生成） ----------
+MGF-Net/checkpoints/
+MGF-Net/outputs/
+*.pth
+*.ckpt
+*.npz
+
+# ---------- 数据集（体积大，且为公开数据集，见 MGF-Net/data/README.md） ----------
+MGF-Net/data/*
+!MGF-Net/data/README.md
+!MGF-Net/data/dataset.py
+
+# ---------- 构建产物 ----------
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+venv/
+env/
+MGF-Net/docx_unpacked/
+
+# ---------- 本地工具链 / 编辑器 ----------
+.claude/
+.workbuddy/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 临时与草稿 ----------
+skills-lock.json
+s2_recofuse.json
+*.log
+*.tmp
+~$*
+
+# ---------- Office 文档（内容与同名 .md 重复，二进制无法 diff） ----------
+*.docx
+# 上述 .docx 的生成脚本（产物已排除，脚本成为孤岛）
+MGF-Net/generate_report*.js
