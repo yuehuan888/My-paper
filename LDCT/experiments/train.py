@@ -154,15 +154,23 @@ def train(args):
     te = make_dataset(args.dataset, "test", split_file=args.split_file,
                       patch_size=None, cache=True)
 
-    model = PRWaveletDenoiser(levels=args.levels, mid_ch=args.mid_ch,
-                              n_conv=args.n_conv,
-                              wavelet=args.wavelet,
-                              global_residual=args.global_residual).to(device)
+    if args.model == "redcnn":
+        from models.redcnn import REDCNN
+        model = REDCNN(in_channels=1, out_channels=1).to(device)
+    else:
+        model = PRWaveletDenoiser(levels=args.levels, mid_ch=args.mid_ch,
+                                  n_conv=args.n_conv,
+                                  wavelet=args.wavelet,
+                                  global_residual=args.global_residual).to(device)
     n_par = count_parameters(model)
-    rep = model.param_report()
+    # 只有 PRWaveletDenoiser 提供参数构成与闭环诊断；RED-CNN 无此接口
+    rep = (model.param_report() if hasattr(model, "param_report")
+           else {"wavelet": 0, "heads": n_par, "global": 0,
+                 "total": n_par, "wavelet_frac": 0.0})
 
     cfg = {
-        "tag": args.tag, "created": datetime.now(timezone.utc).isoformat(),
+        "tag": args.tag, "model": args.model,
+        "created": datetime.now(timezone.utc).isoformat(),
         "code_version": code_version(), "seed": args.seed,
         "epochs": args.epochs, "batch_size": args.batch_size,
         "patch": args.patch, "learning_rate": args.learning_rate,
@@ -189,10 +197,14 @@ def train(args):
     print(f"训练 {args.tag}")
     print(f"  数据      : train={tr.n_slices}  val={va.n_slices}  test={te.n_slices}  "
           f"单片 {tr.slice_shape()}")
-    print(f"  模型      : {n_par:,} 参数 (wavelet {rep['wavelet']}, heads {rep['heads']})"
-          f"   [wavelet={args.wavelet}]")
-    me, rl = model.transform_roundtrip(torch.rand(1,1,256,256).to(device))
-    print(f"  变换闭环  : max|err|={me:.3e}  rel_L2={rl:.3e}")
+    print(f"  模型      : {args.model}  {n_par:,} 参数"
+          + (f" (wavelet {rep['wavelet']}, heads {rep['heads']}, "
+             f"wavelet={args.wavelet})" if args.model == "pr_wavelet" else ""))
+    if hasattr(model, "transform_roundtrip"):
+        me, rl = model.transform_roundtrip(torch.rand(1,1,256,256).to(device))
+        print(f"  变换闭环  : max|err|={me:.3e}  rel_L2={rl:.3e}")
+    else:
+        print(f"  变换闭环  : 不适用（RED-CNN 无小波变换）")
     print(f"  配置      : epochs={args.epochs} patch={args.patch} bs={args.batch_size} "
           f"lr={args.learning_rate} LR衰减点={milestones}")
     print(f"  代码版本  : {cfg['code_version']}")
@@ -322,6 +334,10 @@ def main():
     ap.add_argument("--levels", type=int, default=2)
     ap.add_argument("--mid-ch", type=int, default=16)
     ap.add_argument("--n-conv", type=int, default=2)
+    ap.add_argument("--model", default="pr_wavelet",
+                    choices=["pr_wavelet", "redcnn"],
+                    help="redcnn = RED-CNN 基线（Chen 2017，约 1.85M 参数），"
+                         "用于在同划分下与本文方法对比")
     ap.add_argument("--wavelet", default="pr",
                     choices=["pr", "fixed", "unconstrained"],
                     help="pr=PR-LWT(可逆,可学习) | fixed=固定Haar | "
