@@ -27,6 +27,7 @@ LoDoPaB-CT 数据集加载。
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Callable, Sequence
@@ -182,3 +183,87 @@ if __name__ == "__main__":
                   f"gt {tuple(g.shape)} [{g.min():.4f},{g.max():.4f}]")
         except FileNotFoundError as e:
             print(f"  [{sp}] 数据尚未就绪: {e}")
+
+
+# ======================================================================
+# AAPM-Mayo 2016 支持
+# ======================================================================
+
+class AapmDataset(Dataset):
+    """AAPM-Mayo 2016 LDCT 去噪数据集（每患者一个 h5）。
+
+    h5 结构（由 `prepare_aapm.py` 生成）：
+        /observation    (N, 512, 512) float32  [0,1]
+        /ground_truth   (N, 512, 512) float32  [0,1]
+        attrs: patient_id, n_slices, z_positions
+
+    划分按**患者**，避免同一患者的相邻切片跨集合（读 splits/*.json）。
+    """
+
+    def __init__(self, root: str, split_file: str, split: str = "train",
+                 patch_size: int | None = None, is_training: bool = False):
+        with open(os.path.join(root, "index.json"), encoding="utf-8") as f:
+            self.index = json.load(f)
+        with open(split_file, encoding="utf-8") as f:
+            sp = json.load(f)
+
+        key = {"train": "train_patients", "val": "val_patients",
+               "test": "test_patients"}[split]
+        self.split = split
+        self.patients = list(sp[key])
+        if not self.patients:
+            raise ValueError(f"划分 {split_file} 的 {key} 为空")
+
+        missing = [p for p in self.patients if p not in self.index["patients"]]
+        if missing:
+            raise ValueError(f"划分中的患者不在数据集中: {missing}")
+
+        self.root = root
+        self.patch_size = patch_size
+        self.is_training = is_training
+        self.hu_window = tuple(self.index.get("hu_window", [0, 1]))
+
+        # 扁平索引：(患者, 切片号)
+        self._index = []
+        for p in self.patients:
+            n = self.index["patients"][p]["n_slices"]
+            self._index.extend((p, i) for i in range(n))
+
+    @property
+    def n_slices(self) -> int:
+        return len(self._index)
+
+    def slice_shape(self):
+        p0 = self.patients[0]
+        sh = self.index["patients"][p0]["shape"]
+        return sh[0], sh[1]
+
+    def summary(self) -> str:
+        return (f"AAPM[{self.split}]  患者={self.patients}  "
+                f"切片={self.n_slices}  尺寸={self.slice_shape()}  "
+                f"HU窗={self.hu_window}")
+
+    def __len__(self):
+        return len(self._index)
+
+    def __getitem__(self, i):
+        pid, si = self._index[i]
+        h5p = os.path.join(self.root, f"{pid}.h5")
+        with h5py.File(h5p, "r") as f:
+            obs = np.asarray(f["observation"][si], dtype=np.float32)
+            gt = np.asarray(f["ground_truth"][si], dtype=np.float32)
+
+        if self.patch_size is not None:
+            h, w = obs.shape
+            p = self.patch_size
+            if h < p or w < p:
+                raise ValueError(f"patch_size={p} > 图像尺寸 {(h, w)}")
+            if self.is_training:
+                rng = np.random.default_rng()
+                y = int(rng.integers(0, h - p + 1))
+                x = int(rng.integers(0, w - p + 1))
+            else:
+                y, x = (h - p) // 2, (w - p) // 2
+            obs, gt = obs[y:y+p, x:x+p], gt[y:y+p, x:x+p]
+
+        return torch.from_numpy(obs).unsqueeze(0), torch.from_numpy(gt).unsqueeze(0)

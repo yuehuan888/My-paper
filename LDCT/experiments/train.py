@@ -44,11 +44,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
-from data.dataset import LoDoPaBDataset          # noqa: E402
+from data.dataset import LoDoPaBDataset, AapmDataset  # noqa: E402
 from models.denoiser import PRWaveletDenoiser, count_parameters  # noqa: E402
 from utils.metrics import psnr, ssim             # noqa: E402
 
 DATA_ROOT = os.path.join(ROOT, "data", "extracted")
+AAPM_ROOT = os.path.join(ROOT, "data", "aapm_h5")
+AAPM_SPLIT = os.path.join(ROOT, "splits", "aapm_mayo_3mm.json")
+
+
+def make_dataset(name, split, **kw):
+    """统一入口。AAPM 用按患者的划分；LoDoPaB 用官方 split。"""
+    if name == "aapm":
+        return AapmDataset(AAPM_ROOT, AAPM_SPLIT, split, **kw)
+    return LoDoPaBDataset(DATA_ROOT, split, **kw)
 
 
 def set_seed(seed: int) -> None:
@@ -75,7 +84,8 @@ def code_version() -> str:
 @torch.no_grad()
 def evaluate(model, loader, device, limit=None):
     """逐样本评测，返回逐样本指标与均值。"""
-    model.eval()
+    if model is not None:
+        model.eval()          # identity 基线时 model 为 None
     rows = []
     for i, (obs, gt) in enumerate(loader):
         if limit is not None and i >= limit:
@@ -92,9 +102,9 @@ def evaluate(model, loader, device, limit=None):
     return rows, mean
 
 
-def run_trivial_baselines(device, split="test", limit=None):
+def run_trivial_baselines(device, split="test", limit=None, dataset="aapm"):
     """平凡基线：identity（输出=输入）。这是模型必须超过的地板。"""
-    ds = LoDoPaBDataset(DATA_ROOT, split)
+    ds = make_dataset(dataset, split)
     dl = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
     print("=" * 78)
     print(f"平凡基线（{split} 集，{ds.n_slices} 张）")
@@ -114,10 +124,9 @@ def train(args):
     run_dir = os.path.join(HERE, "runs", args.tag)
     os.makedirs(run_dir, exist_ok=True)
 
-    tr = LoDoPaBDataset(DATA_ROOT, "train", patch_size=args.patch,
-                        is_training=True)
-    va = LoDoPaBDataset(DATA_ROOT, "validation", patch_size=None)
-    te = LoDoPaBDataset(DATA_ROOT, "test", patch_size=None)
+    tr = make_dataset(args.dataset, "train", patch_size=args.patch, is_training=True)
+    va = make_dataset(args.dataset, "val", patch_size=None)
+    te = make_dataset(args.dataset, "test", patch_size=None)
 
     model = PRWaveletDenoiser(levels=args.levels, mid_ch=args.mid_ch,
                               n_conv=args.n_conv,
@@ -136,7 +145,8 @@ def train(args):
         "use_pr_wavelet": not args.no_pr_wavelet,
         "global_residual": args.global_residual,
         "n_params": n_par, "param_report": rep,
-        "data_root": os.path.relpath(DATA_ROOT, ROOT),
+        "dataset": args.dataset,
+        "data_root": os.path.relpath(AAPM_ROOT if args.dataset=="aapm" else DATA_ROOT, ROOT),
         "n_train": tr.n_slices, "n_val": va.n_slices, "n_test": te.n_slices,
         "slice_shape": tr.slice_shape(),
         "device": str(device), "torch": torch.__version__,
@@ -251,6 +261,7 @@ def train(args):
 def main():
     ap = argparse.ArgumentParser(description="LDCT 去噪训练")
     ap.add_argument("--tag", default=None)
+    ap.add_argument("--dataset", default="aapm", choices=["aapm", "lodopab"])
     ap.add_argument("--baseline-only", action="store_true",
                     help="只跑平凡基线（identity），不训练")
     ap.add_argument("--seed", type=int, default=0)
@@ -272,7 +283,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.baseline_only:
-        run_trivial_baselines(device, "test", args.test_limit)
+        run_trivial_baselines(device, "test", args.test_limit, args.dataset)
         return
     if not args.tag:
         ap.error("非 --baseline-only 时必须给 --tag")
