@@ -89,18 +89,21 @@ def psnr(pred, target) -> float:
     return float(10.0 * np.log10(DATA_RANGE ** 2 / mse))
 
 
-_SSIM_WINDOW = None
+_SSIM_G1D = None
 
 
-def _ssim_window(n: int = 11, sigma: float = 1.5) -> np.ndarray:
-    """pytorch-ssim 的高斯窗：gaussian(11,1.5) 的外积，归一化。"""
-    global _SSIM_WINDOW
-    if _SSIM_WINDOW is None:
+def _ssim_gauss1d(n: int = 11, sigma: float = 1.5) -> np.ndarray:
+    """pytorch-ssim 的一维高斯核 gaussian(11, 1.5)，归一化。
+
+    二维窗是它的外积 `np.outer(g, g)`——即**可分离**，故卷积可拆成两次一维。
+    直接对 11×11 核做二维卷积是 121 次乘加/像素，分离后只需 22 次。
+    """
+    global _SSIM_G1D
+    if _SSIM_G1D is None:
         x = np.arange(n) - n // 2
         g = np.exp(-(x ** 2) / (2.0 * sigma ** 2))
-        g = g / g.sum()
-        _SSIM_WINDOW = np.outer(g, g)
-    return _SSIM_WINDOW
+        _SSIM_G1D = g / g.sum()
+    return _SSIM_G1D
 
 
 def ssim(pred, target) -> float:
@@ -121,13 +124,17 @@ def ssim(pred, target) -> float:
     本实现已与参考仓库代码**逐字对照**（torch 版与 numpy 移植版结果一致，
     均为 0.8759），故以本实现为准；PSNR 三项数值则与调研报告**精确吻合**。
     """
-    from scipy.ndimage import convolve
+    from scipy.ndimage import convolve1d
 
     p, g = _eval_pair(pred, target)
     if min(p.shape) < 11:
         raise ValueError(f"SSIM 局部窗口需边长 >= 11，实际 {p.shape}")
-    w = _ssim_window()
-    c = lambda a: convolve(a, w, mode="constant", cval=0.0)   # 零填充
+    # 可分离实现：高斯核 W = g ⊗ g，故 W*x = g_row * (g_col * x)。
+    # 直接对 11×11 核做二维卷积是 121 次乘加/像素；分离后只需 22 次。
+    # 实测这是验证阶段的瓶颈（343 张 512×512，每张 4 次卷积）。
+    g1 = _ssim_gauss1d()
+    c = lambda a: convolve1d(convolve1d(a, g1, axis=0, mode="constant", cval=0.0),
+                             g1, axis=1, mode="constant", cval=0.0)
     mu1, mu2 = c(g), c(p)
     mu1_sq, mu2_sq, mu1_mu2 = mu1 ** 2, mu2 ** 2, mu1 * mu2
     s1 = c(g * g) - mu1_sq

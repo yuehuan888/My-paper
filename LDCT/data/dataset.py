@@ -201,7 +201,8 @@ class AapmDataset(Dataset):
     """
 
     def __init__(self, root: str, split_file: str, split: str = "train",
-                 patch_size: int | None = None, is_training: bool = False):
+                 patch_size: int | None = None, is_training: bool = False,
+                 cache: bool = False):
         with open(os.path.join(root, "index.json"), encoding="utf-8") as f:
             self.index = json.load(f)
         with open(split_file, encoding="utf-8") as f:
@@ -229,6 +230,21 @@ class AapmDataset(Dataset):
             n = self.index["patients"][p]["n_slices"]
             self._index.extend((p, i) for i in range(n))
 
+        # 可选内存缓存。
+        # 动机：单线程逐样本打开 gzip 压缩的 HDF5 极慢——
+        # 上一轮训练在第一轮就卡了 30 分钟（1600 片 × 每片开一次文件）。
+        # 训练集 1600×512×512×4B×2 ≈ 3.4 GB，本机内存足够。
+        self.cache = cache
+        self._cache = {}
+        if cache:
+            total = 0
+            for p in self.patients:
+                h5p = os.path.join(self.root, f"{p}.h5")
+                with h5py.File(h5p, "r") as f:
+                    self._cache[p] = (f["observation"][:], f["ground_truth"][:])
+                total += self._cache[p][0].nbytes * 2
+            print(f"    [cache] {split}: 已载入内存 {total/1073741824:.2f} GB")
+
     @property
     def n_slices(self) -> int:
         return len(self._index)
@@ -248,10 +264,15 @@ class AapmDataset(Dataset):
 
     def __getitem__(self, i):
         pid, si = self._index[i]
-        h5p = os.path.join(self.root, f"{pid}.h5")
-        with h5py.File(h5p, "r") as f:
-            obs = np.asarray(f["observation"][si], dtype=np.float32)
-            gt = np.asarray(f["ground_truth"][si], dtype=np.float32)
+        if self.cache:
+            o, g = self._cache[pid]
+            obs = np.asarray(o[si], dtype=np.float32)
+            gt = np.asarray(g[si], dtype=np.float32)
+        else:
+            h5p = os.path.join(self.root, f"{pid}.h5")
+            with h5py.File(h5p, "r") as f:
+                obs = np.asarray(f["observation"][si], dtype=np.float32)
+                gt = np.asarray(f["ground_truth"][si], dtype=np.float32)
 
         if self.patch_size is not None:
             h, w = obs.shape

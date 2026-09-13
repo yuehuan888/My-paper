@@ -124,9 +124,11 @@ def train(args):
     run_dir = os.path.join(HERE, "runs", args.tag)
     os.makedirs(run_dir, exist_ok=True)
 
-    tr = make_dataset(args.dataset, "train", patch_size=args.patch, is_training=True)
-    va = make_dataset(args.dataset, "val", patch_size=None)
-    te = make_dataset(args.dataset, "test", patch_size=None)
+    # 训练集载入内存：单线程逐样本开 gzip HDF5 极慢（实测一轮 30 分钟）
+    tr = make_dataset(args.dataset, "train", patch_size=args.patch,
+                      is_training=True, cache=True)
+    va = make_dataset(args.dataset, "val", patch_size=None, cache=True)
+    te = make_dataset(args.dataset, "test", patch_size=None, cache=True)
 
     model = PRWaveletDenoiser(levels=args.levels, mid_ch=args.mid_ch,
                               n_conv=args.n_conv,
@@ -234,8 +236,24 @@ def train(args):
     te_loader = DataLoader(te, batch_size=1, shuffle=False, num_workers=0)
     te_rows, te_mean = evaluate(model, te_loader, device, limit=args.test_limit)
 
+    # 逐患者拆分：口径 A 的文献常用 **L506 单患者**做测试，
+    # 故同时报 L506-only（可对外比）与全部测试患者（自有估计）
+    per_patient = {}
+    if hasattr(te, "_index"):
+        from collections import defaultdict
+        buckets = defaultdict(list)
+        for row, (pid, _) in zip(te_rows, te._index):
+            buckets[pid].append(row)
+        for pid, rs in buckets.items():
+            per_patient[pid] = {
+                "n": len(rs),
+                "PSNR": float(np.mean([r["PSNR"] for r in rs])),
+                "SSIM": float(np.mean([r["SSIM"] for r in rs])),
+            }
+
     results = {
         "tag": args.tag, "seed": args.seed, "n_params": n_par,
+        "test_per_patient": per_patient,
         "best_epoch": best["epoch"], "best_val_psnr": best["psnr"],
         "val_mean": best["val"], "test_mean": te_mean,
         "test_per_sample": te_rows,
@@ -254,6 +272,8 @@ def train(args):
     print(f"最优 epoch {best['epoch']}  (val PSNR {best['psnr']:.4f})   用时 {wall/60:.1f} min")
     print(f"TEST:  PSNR {te_mean['PSNR']:.4f}   SSIM {te_mean['SSIM']:.4f}   "
           f"(n={len(te_rows)})")
+    for pid, v in sorted(per_patient.items()):
+        print(f"   {pid}: PSNR {v['PSNR']:.4f}  SSIM {v['SSIM']:.4f}  (n={v['n']})")
     print(f"结果目录: {run_dir}")
     return results
 
