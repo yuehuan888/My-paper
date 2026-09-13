@@ -88,3 +88,9 @@ MGF-Net/xm.txt
 ecf.txt
 ecf_raw.html
 MGF-Net/nature*.txt
+
+# ---------- LDCT 项目 ----------
+# 下载的 LoDoPaB 数据集（55 GB）与解压产物一律不入库
+LDCT/data/raw/
+LDCT/data/extracted/
+*.hdf5
