@@ -46,17 +46,18 @@ sys.path.insert(0, ROOT)
 
 from data.dataset import LoDoPaBDataset, AapmDataset  # noqa: E402
 from models.denoiser import PRWaveletDenoiser, count_parameters  # noqa: E402
-from utils.metrics import psnr, ssim             # noqa: E402
+from utils.metrics import (psnr, ssim, ssim_torch,       # noqa: E402
+                           HU_OFFSET, HU_SCALE, EVAL_LO, EVAL_HI, DATA_RANGE)
 
 DATA_ROOT = os.path.join(ROOT, "data", "extracted")
 AAPM_ROOT = os.path.join(ROOT, "data", "aapm_h5")
 AAPM_SPLIT = os.path.join(ROOT, "splits", "aapm_mayo_3mm.json")
 
 
-def make_dataset(name, split, **kw):
+def make_dataset(name, split, split_file=None, **kw):
     """统一入口。AAPM 用按患者的划分；LoDoPaB 用官方 split。"""
     if name == "aapm":
-        return AapmDataset(AAPM_ROOT, AAPM_SPLIT, split, **kw)
+        return AapmDataset(AAPM_ROOT, split_file or AAPM_SPLIT, split, **kw)
     return LoDoPaBDataset(DATA_ROOT, split, **kw)
 
 
@@ -82,29 +83,50 @@ def code_version() -> str:
 
 # ------------------------------------------------------------------ 评测
 @torch.no_grad()
-def evaluate(model, loader, device, limit=None):
-    """逐样本评测，返回逐样本指标与均值。"""
+def evaluate(model, loader, device, limit=None, batch_eval=16):
+    """评测，返回逐样本指标与均值。**在 GPU 上整批完成**。
+
+    为什么必须整批：口径 A 的评测要跑 343~435 张 512×512 切片，
+    CPU 版 SSIM 约 279 ms/张，一次验证近 1 分钟——30 轮训练里验证占总时长
+    约 70%（训练本身只要 2.5 分钟）。GPU 版 SSIM 快 **12 倍**且数值等价
+    （最大差 1.07e-07，见 utils/metrics.py 的 `ssim_torch`）。
+    """
     if model is not None:
         model.eval()          # identity 基线时 model 为 None
-    rows = []
+
+    obs_list, gt_list = [], []
     for i, (obs, gt) in enumerate(loader):
         if limit is not None and i >= limit:
             break
-        obs_d, gt_d = obs.to(device), gt.to(device)
-        if model is None:
-            out = obs_d                       # identity 基线
-        else:
-            out = model(obs_d)
-        o = out.squeeze().float().cpu().numpy()
-        g = gt_d.squeeze().float().cpu().numpy()
-        rows.append({"PSNR": psnr(o, g), "SSIM": ssim(o, g)})
+        obs_list.append(obs)
+        gt_list.append(gt)
+    if not obs_list:
+        raise ValueError("评测集为空")
+
+    rows = []
+    for s in range(0, len(obs_list), batch_eval):
+        ob = torch.cat(obs_list[s:s + batch_eval], 0).to(device).float()
+        gt = torch.cat(gt_list[s:s + batch_eval], 0).to(device).float()
+        out = ob if model is None else model(ob)
+
+        # PSNR / SSIM 均在 GPU 上按口径 A 计算
+        p = torch.clamp(out * HU_SCALE - HU_OFFSET, EVAL_LO, EVAL_HI)
+        g = torch.clamp(gt * HU_SCALE - HU_OFFSET, EVAL_LO, EVAL_HI)
+        mse = (p - g).pow(2).flatten(1).mean(1)
+        ps = 10.0 * torch.log10(DATA_RANGE ** 2 / mse.clamp_min(1e-12))
+        ps = torch.where(mse <= 0, torch.full_like(ps, float("inf")), ps)
+        ss = ssim_torch(out, gt)
+        for j in range(ob.shape[0]):
+            rows.append({"PSNR": float(ps[j]), "SSIM": float(ss[j])})
+
     mean = {k: float(np.mean([r[k] for r in rows])) for k in rows[0]}
     return rows, mean
 
 
-def run_trivial_baselines(device, split="test", limit=None, dataset="aapm"):
+def run_trivial_baselines(device, split="test", limit=None, dataset="aapm",
+                          split_file=None):
     """平凡基线：identity（输出=输入）。这是模型必须超过的地板。"""
-    ds = make_dataset(dataset, split)
+    ds = make_dataset(dataset, split, split_file)
     dl = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
     print("=" * 78)
     print(f"平凡基线（{split} 集，{ds.n_slices} 张）")
@@ -125,10 +147,12 @@ def train(args):
     os.makedirs(run_dir, exist_ok=True)
 
     # 训练集载入内存：单线程逐样本开 gzip HDF5 极慢（实测一轮 30 分钟）
-    tr = make_dataset(args.dataset, "train", patch_size=args.patch,
-                      is_training=True, cache=True)
-    va = make_dataset(args.dataset, "val", patch_size=None, cache=True)
-    te = make_dataset(args.dataset, "test", patch_size=None, cache=True)
+    tr = make_dataset(args.dataset, "train", split_file=args.split_file,
+                      patch_size=args.patch, is_training=True, cache=True)
+    va = make_dataset(args.dataset, "val", split_file=args.split_file,
+                      patch_size=None, cache=True)
+    te = make_dataset(args.dataset, "test", split_file=args.split_file,
+                      patch_size=None, cache=True)
 
     model = PRWaveletDenoiser(levels=args.levels, mid_ch=args.mid_ch,
                               n_conv=args.n_conv,
@@ -149,6 +173,7 @@ def train(args):
         "n_params": n_par, "param_report": rep,
         "dataset": args.dataset,
         "data_root": os.path.relpath(AAPM_ROOT if args.dataset=="aapm" else DATA_ROOT, ROOT),
+        "split_file": args.split_file or AAPM_SPLIT,
         "n_train": tr.n_slices, "n_val": va.n_slices, "n_test": te.n_slices,
         "slice_shape": tr.slice_shape(),
         "device": str(device), "torch": torch.__version__,
@@ -284,6 +309,9 @@ def main():
     ap = argparse.ArgumentParser(description="LDCT 去噪训练")
     ap.add_argument("--tag", default=None)
     ap.add_argument("--dataset", default="aapm", choices=["aapm", "lodopab"])
+    ap.add_argument("--split-file", default=None,
+                    help="划分文件；默认 splits/aapm_mayo_3mm.json。"
+                         "splits/aapm_mayo_3mm_lit.json 为对齐文献的 L506 单测试划分")
     ap.add_argument("--baseline-only", action="store_true",
                     help="只跑平凡基线（identity），不训练")
     ap.add_argument("--seed", type=int, default=0)
@@ -308,7 +336,8 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.baseline_only:
-        run_trivial_baselines(device, "test", args.test_limit, args.dataset)
+        run_trivial_baselines(device, "test", args.test_limit, args.dataset,
+                              args.split_file)
         return
     if not args.tag:
         ap.error("非 --baseline-only 时必须给 --tag")

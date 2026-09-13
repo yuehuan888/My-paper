@@ -45,6 +45,7 @@ EHSANet (2025)、MRED-Net / SDCNN (2025)。
 from __future__ import annotations
 
 import numpy as np
+import torch
 
 # ---------------------------------------------------------------- 口径 A 常数
 HU_OFFSET = 1024.0
@@ -166,3 +167,45 @@ def mean_metrics(rows) -> dict:
 __all__ = ["psnr", "ssim", "evaluate", "mean_metrics",
            "to_hu", "from_hu",
            "HU_OFFSET", "HU_SCALE", "EVAL_LO", "EVAL_HI", "DATA_RANGE"]
+
+
+# ======================================================================
+# GPU 版 SSIM（与上面的 numpy 实现**数值等价**，仅用于加速）
+# ======================================================================
+#
+# 动机：口径 A 的评测要跑 343~435 张 512×512 切片，CPU 版 SSIM 约 112 ms/张，
+# 占整轮训练时间的 ~70%（训练本身只要 2.5 分钟，验证要 5.6 分钟）。
+#
+# SSinyu/RED-CNN 的 measure.py **本身就是 torch 实现**（源自 pytorch-ssim），
+# 故用 torch 重写不仅是加速，口径上反而更贴近参考实现。
+#
+# ⚠️ 必须与 numpy 版数值一致，见 tests/test_ssim_equiv.py。
+
+
+def ssim_torch(pred: torch.Tensor, target: torch.Tensor,
+               data_range: float = DATA_RANGE) -> torch.Tensor:
+    """可微/可批处理的 SSIM，输入为 [B,1,H,W] 的张量（归一化值 [0,1]）。
+
+    内部先转 HU、clip 到评测窗，再按 pytorch-ssim 的零填充 + 全图均值计算。
+    返回每条样本的 SSIM（形状 [B]）。
+    """
+    import torch
+    import torch.nn.functional as F
+
+    g1 = _ssim_gauss1d()
+    w = torch.as_tensor(np.outer(g1, g1), dtype=pred.dtype, device=pred.device)
+    w = w.view(1, 1, *w.shape)
+
+    p = torch.clamp(pred.float() * HU_SCALE - HU_OFFSET, EVAL_LO, EVAL_HI)
+    g = torch.clamp(target.float() * HU_SCALE - HU_OFFSET, EVAL_LO, EVAL_HI)
+
+    mu1 = F.conv2d(g, w, padding=5)
+    mu2 = F.conv2d(p, w, padding=5)
+    mu1_sq, mu2_sq, mu1_mu2 = mu1 * mu1, mu2 * mu2, mu1 * mu2
+    s1 = F.conv2d(g * g, w, padding=5) - mu1_sq
+    s2 = F.conv2d(p * p, w, padding=5) - mu2_sq
+    s12 = F.conv2d(g * p, w, padding=5) - mu1_mu2
+    C1, C2 = (0.01 * data_range) ** 2, (0.03 * data_range) ** 2
+    m = ((2 * mu1_mu2 + C1) * (2 * s12 + C2)) / \
+        ((mu1_sq + mu2_sq + C1) * (s1 + s2 + C2))
+    return m.flatten(1).mean(1)
