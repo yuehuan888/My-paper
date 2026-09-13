@@ -71,11 +71,19 @@ class PRWaveletDenoiser(nn.Module):
         levels:    小波分解级数（2 级 → 7 子带）
         mid_ch:    每个预测头的内部通道数
         n_conv:    每个预测头的卷积层数
-        use_pr_wavelet:
-            True  → 用 PR-LWT（正逆共享参数，可逆性由结构保证）
-            False → 用旧式分离参数的实现，作为**对照**
-                    （用于验证"可逆性是否真的带来收益"，
-                     避免陷入"机制上更干净所以应该更好"的推断）
+        wavelet:
+            'pr'            → PR-LWT（提升格式，正逆共享 P/U，可逆性由结构保证）
+            'fixed'         → 固定正交归一 Haar（不可学习）
+            'unconstrained' → **旧式分离参数**的可学习小波（无闭环保证）
+
+            ⚠️ 三臂对照的意义：
+              pr vs unconstrained —— 是**可逆性是否带来收益**（本项目要回答的问题）
+              pr vs fixed         —— 是**可学习是否带来收益**
+            两者是不同的问题，不能混为一谈。
+
+            ⚠️ 早先本类的 `use_pr_wavelet=False` 只把 lifting 设为不可学习，
+            **并未切换到旧式实现**，导致"对照臂"实际测的是固定 Haar。
+            该误标已修正为显式三选一。
         global_residual:
             是否在图像域再叠一层全局残差分支
             （小波域只处理各子带，图像域残差可补偿整体强度偏移）
@@ -84,14 +92,23 @@ class PRWaveletDenoiser(nn.Module):
     BANDS = ("LL2", "LH2", "HL2", "HH2", "LH1", "HL1", "HH1")
 
     def __init__(self, levels: int = 2, mid_ch: int = 16, n_conv: int = 2,
-                 use_pr_wavelet: bool = True, global_residual: bool = False):
+                 wavelet: str = "pr", global_residual: bool = False):
         super().__init__()
+        if wavelet not in ("pr", "fixed", "unconstrained"):
+            raise ValueError(f"未知 wavelet={wavelet!r}")
         self.levels = levels
-        self.use_pr_wavelet = use_pr_wavelet
+        self.wavelet_kind = wavelet
         self.global_residual = global_residual
 
-        self.wavelet = MultiLevelLifting(levels=levels, n_taps=3,
-                                         learnable=use_pr_wavelet)
+        if wavelet == "unconstrained":
+            from .legacy_dwt import MultiLevelDWT, MultiLevelIDWT
+            self.dwt = MultiLevelDWT(learnable=True)
+            self.idwt = MultiLevelIDWT(learnable=True)
+            self.wavelet = None
+        else:
+            self.wavelet = MultiLevelLifting(levels=levels, n_taps=3,
+                                             learnable=(wavelet == "pr"))
+            self.dwt = self.idwt = None
         self.heads = nn.ModuleDict({b: BandHead(mid_ch, n_conv) for b in self.BANDS})
 
         if global_residual:
@@ -104,9 +121,13 @@ class PRWaveletDenoiser(nn.Module):
 
     # ------------------------------------------------------------ 频域变换
     def decompose(self, x):
+        if self.wavelet_kind == "unconstrained":
+            return self.dwt(x)
         return self.wavelet.decompose(x)
 
     def reconstruct(self, bands):
+        if self.wavelet_kind == "unconstrained":
+            return self.idwt(bands)
         return self.wavelet.reconstruct(bands)
 
     def _pad_to_multiple(self, x):
@@ -149,7 +170,12 @@ class PRWaveletDenoiser(nn.Module):
 
     # ------------------------------------------------------------ 诊断
     def param_report(self) -> dict:
-        n_wave = sum(p.numel() for p in self.wavelet.parameters())
+        # unconstrained 臂的正/逆变换是**两个独立模块**，都要计入
+        if self.wavelet_kind == "unconstrained":
+            n_wave = (sum(p.numel() for p in self.dwt.parameters())
+                      + sum(p.numel() for p in self.idwt.parameters()))
+        else:
+            n_wave = sum(p.numel() for p in self.wavelet.parameters())
         n_head = sum(p.numel() for p in self.heads.parameters())
         n_glob = (sum(p.numel() for p in self.global_branch.parameters())
                   if self.global_branch is not None else 0)

@@ -132,7 +132,7 @@ def train(args):
 
     model = PRWaveletDenoiser(levels=args.levels, mid_ch=args.mid_ch,
                               n_conv=args.n_conv,
-                              use_pr_wavelet=not args.no_pr_wavelet,
+                              wavelet=args.wavelet,
                               global_residual=args.global_residual).to(device)
     n_par = count_parameters(model)
     rep = model.param_report()
@@ -144,7 +144,7 @@ def train(args):
         "patch": args.patch, "learning_rate": args.learning_rate,
         "lr_milestones": None, "levels": args.levels,
         "mid_ch": args.mid_ch, "n_conv": args.n_conv,
-        "use_pr_wavelet": not args.no_pr_wavelet,
+        "wavelet": args.wavelet,
         "global_residual": args.global_residual,
         "n_params": n_par, "param_report": rep,
         "dataset": args.dataset,
@@ -165,7 +165,9 @@ def train(args):
     print(f"  数据      : train={tr.n_slices}  val={va.n_slices}  test={te.n_slices}  "
           f"单片 {tr.slice_shape()}")
     print(f"  模型      : {n_par:,} 参数 (wavelet {rep['wavelet']}, heads {rep['heads']})"
-          + ("" if not args.no_pr_wavelet else "   [旧式非 PR 变换]"))
+          f"   [wavelet={args.wavelet}]")
+    me, rl = model.transform_roundtrip(torch.rand(1,1,256,256).to(device))
+    print(f"  变换闭环  : max|err|={me:.3e}  rel_L2={rl:.3e}")
     print(f"  配置      : epochs={args.epochs} patch={args.patch} bs={args.batch_size} "
           f"lr={args.learning_rate} LR衰减点={milestones}")
     print(f"  代码版本  : {cfg['code_version']}")
@@ -292,8 +294,11 @@ def main():
     ap.add_argument("--levels", type=int, default=2)
     ap.add_argument("--mid-ch", type=int, default=16)
     ap.add_argument("--n-conv", type=int, default=2)
-    ap.add_argument("--no-pr-wavelet", action="store_true",
-                    help="用旧式分离参数变换作对照")
+    ap.add_argument("--wavelet", default="pr",
+                    choices=["pr", "fixed", "unconstrained"],
+                    help="pr=PR-LWT(可逆,可学习) | fixed=固定Haar | "
+                         "unconstrained=旧式分离参数(可学习但无闭环保证)。"
+                         "三臂分别回答不同问题，勿混。")
     ap.add_argument("--global-residual", action="store_true")
     ap.add_argument("--val-interval", type=int, default=2)
     ap.add_argument("--val-limit", type=int, default=None,
