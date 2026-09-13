@@ -1,0 +1,39 @@
+{
+  "tag": "pr_wavelet_s1",
+  "created": "2026-09-13T08:13:04.539263+00:00",
+  "code_version": "dd14a4c59c18-dirty",
+  "seed": 1,
+  "epochs": 30,
+  "batch_size": 8,
+  "patch": 128,
+  "learning_rate": 0.001,
+  "lr_milestones": [
+    15,
+    24,
+    27
+  ],
+  "levels": 2,
+  "mid_ch": 16,
+  "n_conv": 2,
+  "use_pr_wavelet": true,
+  "global_residual": false,
+  "n_params": 2159,
+  "param_report": {
+    "wavelet": 24,
+    "heads": 2135,
+    "global": 0,
+    "total": 2159,
+    "wavelet_frac": 0.0111162575266327
+  },
+  "dataset": "aapm",
+  "data_root": "data\\aapm_h5",
+  "n_train": 1600,
+  "n_val": 343,
+  "n_test": 435,
+  "slice_shape": [
+    512,
+    512
+  ],
+  "device": "cuda",
+  "torch": "2.5.1+cu121"
+}

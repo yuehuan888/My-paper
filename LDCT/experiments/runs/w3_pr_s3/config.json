@@ -1,0 +1,40 @@
+{
+  "tag": "w3_pr_s3",
+  "created": "2026-09-13T15:12:19.946943+00:00",
+  "code_version": "9b0faadf53e8-dirty",
+  "seed": 3,
+  "epochs": 30,
+  "batch_size": 8,
+  "patch": 128,
+  "learning_rate": 0.001,
+  "lr_milestones": [
+    15,
+    24,
+    27
+  ],
+  "levels": 2,
+  "mid_ch": 16,
+  "n_conv": 2,
+  "wavelet": "pr",
+  "global_residual": false,
+  "n_params": 2159,
+  "param_report": {
+    "wavelet": 24,
+    "heads": 2135,
+    "global": 0,
+    "total": 2159,
+    "wavelet_frac": 0.0111162575266327
+  },
+  "dataset": "aapm",
+  "data_root": "data\\aapm_h5",
+  "split_file": "D:\\图像相关论文\\LDCT\\splits\\aapm_mayo_3mm.json",
+  "n_train": 1600,
+  "n_val": 343,
+  "n_test": 435,
+  "slice_shape": [
+    512,
+    512
+  ],
+  "device": "cuda",
+  "torch": "2.5.1+cu121"
+}

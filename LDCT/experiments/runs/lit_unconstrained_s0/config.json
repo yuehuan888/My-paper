@@ -1,0 +1,40 @@
+{
+  "tag": "lit_unconstrained_s0",
+  "created": "2026-09-13T15:59:37.626434+00:00",
+  "code_version": "c176346f7a84-dirty",
+  "seed": 0,
+  "epochs": 30,
+  "batch_size": 8,
+  "patch": 128,
+  "learning_rate": 0.001,
+  "lr_milestones": [
+    15,
+    24,
+    27
+  ],
+  "levels": 2,
+  "mid_ch": 16,
+  "n_conv": 2,
+  "wavelet": "unconstrained",
+  "global_residual": false,
+  "n_params": 2199,
+  "param_report": {
+    "wavelet": 64,
+    "heads": 2135,
+    "global": 0,
+    "total": 2199,
+    "wavelet_frac": 0.02910413824465666
+  },
+  "dataset": "aapm",
+  "data_root": "data\\aapm_h5",
+  "split_file": "splits/aapm_mayo_3mm_lit.json",
+  "n_train": 1943,
+  "n_val": 224,
+  "n_test": 211,
+  "slice_shape": [
+    512,
+    512
+  ],
+  "device": "cuda",
+  "torch": "2.5.1+cu121"
+}
