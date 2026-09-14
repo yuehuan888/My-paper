@@ -1,0 +1,35 @@
+{
+  "pr": {
+    "wavelet_params": 24,
+    "roundtrip_init_relL2": 1.6383954459797678e-07,
+    "roundtrip_after_relL2": 1.5523590946031618e-07,
+    "roundtrip_init_maxabs": 3.5762786865234375e-07,
+    "roundtrip_after_maxabs": 3.5762786865234375e-07,
+    "paper_wavelet_params": 24,
+    "paper_relL2": 9.3e-08,
+    "seed": 0,
+    "steps": 50
+  },
+  "fixed": {
+    "wavelet_params": 0,
+    "roundtrip_init_relL2": 1.6383954459797678e-07,
+    "roundtrip_after_relL2": 1.6383954459797678e-07,
+    "roundtrip_init_maxabs": 3.5762786865234375e-07,
+    "roundtrip_after_maxabs": 3.5762786865234375e-07,
+    "paper_wavelet_params": 0,
+    "paper_relL2": 1.1e-07,
+    "seed": 0,
+    "steps": 50
+  },
+  "unconstrained": {
+    "wavelet_params": 64,
+    "roundtrip_init_relL2": 2.871943820537126e-07,
+    "roundtrip_after_relL2": 0.030522821471095085,
+    "roundtrip_init_maxabs": 4.76837158203125e-07,
+    "roundtrip_after_maxabs": 0.056563377380371094,
+    "paper_wavelet_params": 64,
+    "paper_relL2": 0.99,
+    "seed": 0,
+    "steps": 50
+  }
+}

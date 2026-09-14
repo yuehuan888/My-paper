@@ -1,0 +1,10 @@
+{
+  "tag": "mis111_s3",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.7236398246476,
+  "elapsed_min": 4.626528179645538,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-14T13:09:30.124084+00:00"
+}

@@ -90,7 +90,23 @@ ecf_raw.html
 MGF-Net/nature*.txt
 
 # ---------- LDCT 项目 ----------
-# 下载的 LoDoPaB 数据集（55 GB）与解压产物一律不入库
-LDCT/data/raw/
-LDCT/data/extracted/
+# 数据集一律不入库：体积大（LDCT/data 共 97 GB）、且都是公开可下载的，
+# 获取方式写在 LDCT/data/README.md 里。
+#
+# 教训（2026-09-14）：上一版只排除了 raw/ 与 extracted/，而 aapm/、aapm_h5/、
+# raw_aapm/ **仍会被提交** —— 实测 4769 个文件，含 1.68 GB 的 .h5。
+# 而且 `*.hdf5` 这个模式**并不匹配** `.h5`。故改为排除整个 data/ 再逐个放回脚本。
+LDCT/data/*
+!LDCT/data/README.md
+!LDCT/data/dataset.py
+!LDCT/data/prepare_aapm.py
+!LDCT/data/download.sh
+!LDCT/data/download_modelscope.sh
 *.hdf5
+
+# 调试与训练产物（可由脚本重新生成；留在本地只会干扰阅读）
+LDCT/outputs/
+LDCT/paper/latex/*.aux
+LDCT/paper/latex/*.log
+LDCT/paper/latex/*.out
+LDCT/paper/latex/*.toc

@@ -12,15 +12,18 @@ Making the wavelet transform learnable is a natural extension of wavelet-domain
 image denoising. We show that for low-dose CT, this extension **fails by default**:
 an unconstrained learnable analysis–synthesis pair drifts away from invertibility
 during training, and the resulting network performs **no better than a fixed Haar
-basis** (+0.03 dB, p = 0.11, 95% CI straddling zero). We trace this to the
-transform's reconstruction error, which reaches **99%** after training and forces
-the network to compensate for a loss it should not have to model. Imposing
+basis** (−0.03 dB, p = 0.11, 95% CI straddling zero). We trace this to the
+transform's reconstruction error, which reaches **12–15%** after training. We
+show this is **causal, not merely correlated**: injecting a controlled error of
+the same magnitude into the perfect-reconstruction arm degrades it to the
+fixed-Haar level. Imposing
 perfect reconstruction *by construction* — parameterizing the wavelet as a lifting
 scheme whose inverse shares the forward filters — makes learning pay off:
 **+0.30 dB over unconstrained learning (p = 0.0005) and +0.27 dB over fixed Haar
 (p = 0.0004)**, consistent across two data splits. The resulting network has
 **2,159 parameters** and reaches **31.97 dB** on AAPM-Mayo 2016, within 1.0 dB of
-RED-CNN with ~500× fewer parameters.
+a RED-CNN baseline trained under the identical protocol at **857× fewer
+parameters**.
 
 ---
 
@@ -34,20 +37,21 @@ attractive.
 
 Wavelet-domain processing is a classical way to separate noise from structure,
 and recent work has made the wavelet itself **learnable** to adapt to a specific
-modality and dose [refs]. This paper asks a simple question:
+modality and dose [17], [18], [19], [20], [21], [22]. This paper asks a simple
+question:
 
 > **Does making the wavelet learnable actually help?**
 
 Our answer, established through a controlled three-arm study, is: **not by
 itself.** An unconstrained learnable analysis–synthesis pair performs
-**statistically indistinguishably from a fixed Haar basis** (Section 4). The
+**statistically indistinguishably from a fixed Haar basis** (Section 5.2). The
 reason is not that adaptation is useless, but that **learning destroys the
 transform's own invertibility**: after training, the analysis–synthesis
-round-trip error reaches **99%** of the signal norm, so the network must spend
+round-trip error reaches **12–15%** of the signal norm, so the network must spend
 capacity compensating for a loss it should not have to model.
 
 We then show that this is fixable *by construction*. Parameterizing the wavelet
-as a **lifting scheme** [Daubechies & Sweldens] — in which the inverse is not a
+as a **lifting scheme** [23], [24] — in which the inverse is not a
 second set of parameters but the forward prediction/update filters applied in
 reverse — guarantees invertibility regardless of what the filters learn. With
 this constraint, **learning finally pays off**: +0.30 dB over unconstrained
@@ -56,18 +60,76 @@ learning and +0.27 dB over fixed Haar, both highly significant.
 **Contributions.**
 1. A **negative result**: an unconstrained learnable wavelet gives no benefit over
    a fixed Haar basis for LDCT denoising.
-2. A **mechanism**: the failure is caused by loss of invertibility during
-   training (round-trip error 99%), which is directly measurable.
-3. A **remedy**: PR-LWT, a lifting-scheme learnable wavelet whose invertibility is
-   structural, together with the parameter bounding required to make that
-   guarantee hold in float32.
+2. A **mechanism, established by intervention**: the failure is *caused* by loss
+   of invertibility. Injecting a controlled round-trip error of the same
+   magnitude into the **PR** arm degrades it to the fixed-Haar level — monotonically
+   and significantly (n = 5 seeds, p ≤ 0.007 at every dose). Prior
+   invertible-wavelet denoisers cannot observe this state, because their designs
+   make it unreachable.
+3. A **practical caveat**: the structural PR guarantee does not enforce itself in
+   floating point. Bounding the lifting taps is what makes it hold — without it
+   the round-trip error degrades from 3.6e-07 to 5.2e+00, which the invertible-
+   network literature does not report.
 4. A **2,159-parameter network** that approaches published baselines.
 
 ---
 
-## 2. Method
+## 2. Related Work
 
-### 2.1 Overview
+**Low-dose CT denoising.** Convolutional encoder–decoders such as RED-CNN [1]
+established the field, followed by adversarial [2], [3] and, more recently,
+transformer- and diffusion-based methods [4]–[11]. These improve fidelity but at
+10⁵–10⁷ parameters. A parallel line targets efficiency instead: MLAR-UNet [13],
+CT-Mamba [15], AMFA-Net [16] and MobileMamba-UNet [12] all report competitive
+results at far lower cost, the last of these also operating in a wavelet domain.
+We share the efficiency goal but ask a different question — not *how small can a
+denoiser be*, but *does making the transform itself learnable help at all*.
+
+**Wavelet-domain and multiresolution denoising.** Wavelet shrinkage [27], [28]
+separates noise from structure by thresholding subband coefficients. Multi-level
+wavelet CNNs [17], [18] fold this structure back into deep networks, and recent
+LDCT methods pair wavelets with diffusion [11] or state-space models [12]. In all
+of these the transform is a **fixed** operator; the learnable capacity sits in
+the network around it.
+
+**Learnable transforms and invertibility.** A separate line makes the transform
+itself learnable. LINN [19] learns lifting prediction/update steps around a
+*fixed* undecimated Haar transform; WINNet [20] additionally learns the splitting
+operator, constrained to be orthogonal via a Cayley transform so that PR is
+preserved by construction. Both therefore **build invertibility into the
+architecture**. Classical filter-bank theory [25], [26] supplies the PR
+conditions, the lifting scheme [23], [24] is the standard construction that
+satisfies them by design, and orthogonality has separately been used in CNNs to
+condition optimisation [30].
+
+**The closest prior result, engaged directly.** WINNet's Table II ablation
+compares decimated and undecimated Haar, DCT of several sizes, and learned Cayley
+operators on natural-image AWGN denoising, and reports that the **learned**
+operator performs *similarly to a fixed DCT* — whereupon they default to the
+fixed one. This superficially resembles our negative result, so we address it here
+rather than leave it for a reviewer. Two differences matter. First, their learned
+operator is constrained to be orthogonal, so PR holds throughout: their comparison
+is between two *invertible* transforms, whereas ours is between invertible and
+**non**-invertible ones — the failure we diagnose is not reachable in their
+design, and neither paper reports a round-trip measurement anywhere. Second,
+theirs is a default-picking ablation without significance testing; ours is a
+five-seed paired comparison with confidence intervals.
+
+**Our position.** We propose neither a new wavelet nor a new architecture — the
+lifting construction in §3.2 is LINN's and WINNet's, and WINNet already learns
+the filter taps while preserving PR. What is new is the **missing control**.
+Prior invertible-wavelet denoisers *assume* structural invertibility and never
+test its absence, and so cannot report what happens without it. Making a
+learnable transform's invertibility *optional*, holding capacity and training
+fixed, and measuring the consequence — and the six-order-of-magnitude round-trip
+gap that explains it — is the contribution. §5.2 returns to the residual tension
+with WINNet's ablation.
+
+---
+
+## 3. Method
+
+### 3.1 Overview
 
 ```
 noisy CT x
@@ -78,7 +140,7 @@ noisy CT x
 denoised x̂
 ```
 
-### 2.2 PR-LWT: a perfectly-reconstructible learnable wavelet
+### 3.2 PR-LWT: a perfectly-reconstructible learnable wavelet
 
 We use the **lifting scheme**. In 1-D, with even/odd splitting:
 
@@ -105,29 +167,29 @@ arithmetic; bounding is what makes it *usable* in float32.
 
 **Parameter count**: 2 levels × 2 directions × 2 filters × 3 taps = **24**.
 
-### 2.3 Subband denoising heads
+### 3.3 Subband denoising heads
 
 Each subband is processed by a lightweight head (`conv3×3 → ReLU → conv3×3`,
 16 internal channels) that predicts a **residual** (signed, no final activation).
 Seven heads contribute 2,135 parameters; the complete network has **2,159**.
 
-### 2.4 Training
+### 3.4 Training
 
 Loss: L1 between prediction and ground truth. Adam, lr 1e-3, 30 epochs,
 128×128 random patches, batch size 8.
 
 ---
 
-## 3. Experimental Setup
+## 4. Experimental Setup
 
-### 3.1 Data
+### 4.1 Data
 
 **AAPM-Mayo 2016 Low Dose CT Grand Challenge**, 3 mm B30 paired subset:
 10 patients, 2,378 quarter-dose / full-dose 512×512 slice pairs.
 Slices are paired by `ImagePositionPatient[2]` (z position); pairing by filename
 is **not** possible because the slice-index field is identical on both sides.
 
-### 3.2 Evaluation protocol
+### 4.2 Evaluation protocol
 
 AAPM never defined a PSNR protocol (its official metric was radiologist
 reading), and at least five mutually incompatible conventions coexist on this
@@ -145,7 +207,7 @@ aggregate   per-slice metrics, then mean
 Our implementation reproduces an independent measurement of the identity
 baseline **exactly** (L506 29.2489, L067 26.5576, combined 27.8630).
 
-### 3.3 Splits
+### 4.3 Splits
 
 Two patient-level splits are used to show robustness:
 
@@ -157,38 +219,64 @@ Two patient-level splits are used to show robustness:
 S2 aligns with the convention used by published work so that numbers are
 directly comparable.
 
-### 3.4 The floor: doing nothing
+### 4.4 The floor: doing nothing
 
-| Patient | identity PSNR | SSIM |
-|---|---|---|
-| L506 | 29.2489 | 0.8759 |
-| L067 | 26.5576 | 0.7987 |
-| L143 | 23.989 | 0.6983 |
-| S1 combined | 27.8630 | 0.8361 |
+Identity (output = input) is the floor every model must beat. All ten patients,
+sorted by PSNR (`experiments/identity_floors.py` → `identity_floors.json`):
 
-The spread across patients (23.99 – 30.33 dB) is larger than any effect we
-report, so **all results are reported per patient**.
+| Patient | n | identity PSNR | SSIM | Appears as |
+|---|---|---|---|---|
+| L143 | 234 | 25.4991 | 0.7643 | train (both splits) |
+| L310 | 214 | 26.2577 | 0.7273 | train (both splits) |
+| L067 | 224 | 26.5576 | 0.7987 | S1 test / S2 val |
+| L109 | 128 | 26.6052 | 0.8165 | train (both splits) |
+| L096 | 330 | 26.9097 | 0.7853 | train (both splits) |
+| L291 | 343 | 26.9805 | 0.8088 | S1 val / S2 train |
+| L333 | 244 | 27.2508 | 0.8305 | train (both splits) |
+| L192 | 240 | 28.2896 | 0.8344 | train (both splits) |
+| L286 | 210 | 29.1479 | 0.8103 | train (both splits) |
+| L506 | 211 | 29.2489 | 0.8759 | test (both splits) |
+| *S1 test, combined* | *435* | *27.8630* | *0.8361* | |
+| *S2 test (L506)* | *211* | *29.2489* | *0.8759* | |
+
+The spread across patients (**25.50 – 29.25 dB**, a 3.75 dB range) is larger than
+any effect we report, so **all results are reported per patient**.
 
 ---
 
-## 4. Experiments
+## 5. Experiments
 
-### 4.1 Main results
+### 5.1 Main results
 
-| Split | Arm | PSNR | SSIM |
-|---|---|---|---|
-| S1 | identity | 27.8630 | 0.8361 |
-| S1 | **PR-LWT** | **30.8314 ± 0.0815** | — |
-| S2 | identity (L506) | 29.2489 | 0.8759 |
-| S2 | **PR-LWT** | **31.9731 ± 0.0787** | — |
-| S2 | RED-CNN [1] (published) | ≈ 32.93 | — |
-| S2 | CTformer [ref] (published) | ≈ 32.9 | — |
+| Split | Method | Params | PSNR | SSIM |
+|---|---|---|---|---|
+| S1 | identity | — | 27.8630 | 0.8361 |
+| S1 | **PR-LWT (ours)** | **2,159** | **30.8314 ± 0.0815** | — |
+| S1 | RED-CNN [1] (ours, same split) | 1,848,865 | 31.8310 | 0.8824 |
+| S2 | identity (L506) | — | 29.2489 | 0.8759 |
+| S2 | **PR-LWT (ours)** | **2,159** | **31.9731 ± 0.0787** | — |
+| S2 | RED-CNN [1] (ours, same split) | 1,848,865 | **32.9471** | **0.9090** |
+| S2 | RED-CNN [1] (as published) | ~10⁶ | ≈ 32.93 | — |
+| S2 | CTformer [4] (as published) | ~1.4×10⁶ | ≈ 32.9 | — |
 
-PR-LWT reaches within **0.96 dB** of RED-CNN on the literature-aligned split
-with **~500× fewer parameters**. Note that our training split has one fewer
-patient than the published setting, which is unfavourable to us.
+**The baselines marked *ours* were trained by us under the identical protocol** —
+same splits, same patch size, batch size, optimiser, schedule and evaluation — so
+the comparison no longer rests on matching a published setup. Two observations
+follow.
 
-### 4.2 Ablation: is invertibility the key?
+First, an **independent check of our protocol**: on the literature-aligned split
+S2 our RED-CNN reaches **32.9471 dB on L506**, within **0.02 dB** of the
+independently published 32.93 dB for the same patient [1]. Our implementation and
+our evaluation convention therefore reproduce the reference result rather than
+merely resembling it.
+
+Second, under that matched comparison, PR-LWT comes within **0.97 dB** (S2) and
+**1.00 dB** (S1) of RED-CNN while using **857× fewer parameters** (2,159 vs.
+1,848,865). We state plainly that **PR-LWT does not beat RED-CNN on PSNR**; the
+claim under test in this paper is about *what makes a learnable transform
+helpful*, not about attaining state of the art.
+
+### 5.2 Ablation: is invertibility the key?
 
 **Three arms**, differing *only* in the wavelet:
 
@@ -244,29 +332,75 @@ Unconstrained learning genuinely buys nothing.
 > significance by orders of magnitude. All tests above therefore use the
 > **training seed** as the independent unit. This is deliberately conservative.
 
-### 4.3 Mechanism: what unconstrained learning actually does
+**Relation to WINNet's splitting-operator ablation.** WINNet [20] reports the
+opposite conclusion for a superficially similar comparison: a learned,
+orthogonality-constrained splitting operator matched a fixed DCT on natural-image
+AWGN denoising, so they defaulted to the fixed one. Our setting differs along
+several axes at once — task (LDCT vs. natural-image AWGN), transform family (a
+2-level lifting parametrization *initialized at* Haar, so learning departs from
+the fixed baseline rather than searching over all orthogonal matrices of a
+matched size), and evaluation (five-seed paired tests with confidence intervals
+vs. a default-picking ablation). We cannot attribute the discrepancy to any one
+of these from the published numbers alone, and we flag it rather than claim a
+general conclusion. What this experiment does establish is narrower, and we
+believe robust: **within this architecture and task, the PR constraint is what
+makes learnability pay.**
 
-We measure the analysis–synthesis round-trip error of the learned transform
-(relative L2 after 50 training steps):
+### 5.3 Mechanism: what unconstrained learning actually does
 
-| Arm | Wavelet params | Round-trip error (rel. L2) |
-|---|---|---|
-| `pr` | 24 | **9.3e-08** |
-| `fixed` | 0 | 1.1e-07 |
-| `unconstrained` | 64 | **9.9e-01** |
+We measure the analysis–synthesis round-trip error of the **trained** transforms,
+on the final checkpoint of every seed
+(`experiments/verify_roundtrip.py --checkpoints`). Panel (a) of Fig. 2 shows
+these; panel (b) shows the intervention described below.
 
-Unconstrained learning drives the transform to a state where **99% of the signal
-is lost in a forward–backward pass**. The network must then denoise *and*
-compensate for its own transform, and that burden cancels whatever benefit
-adaptation could have provided — which is exactly why it lands on the fixed-Haar
-performance level.
+| Arm | Wavelet params | Round-trip error (rel. L2), S1 | S2 |
+|---|---|---|---|
+| `pr` | 24 | **1.62e-07** | **1.65e-07** |
+| `fixed` | 0 | 1.64e-07 | 1.64e-07 |
+| `unconstrained` | 64 | **1.25e-01** | **1.45e-01** |
+
+Unconstrained learning drives the transform to a state where **12–15% of the
+signal is lost in a forward–backward pass** (S1 per-seed range 0.11–0.15),
+against **1.6e-07** — the float32 limit — for the two invertible arms: a gap of
+**six orders of magnitude**. The network must then denoise *and* compensate for
+its own transform.
+
+**The comparison above is correlational.** The unconstrained arm both loses
+invertibility *and* performs like fixed Haar; that alone does not show the former
+causes the latter. We therefore **intervene directly**. Holding architecture,
+capacity and training protocol fixed, we inject a controlled round-trip error
+into the **PR** arm by having its synthesis step use `(1−ε)·U` while analysis
+still uses `U` — reproducing, in isolation, exactly the defect the unconstrained
+arm develops on its own:
+
+| Injected ε | Measured round-trip | Test PSNR (S1) | Δ vs. ε=0 | Paired *p* |
+|---|---|---|---|---|
+| 0 (control) | 1.6e-07 | 30.8314 ± 0.0815 | — | — |
+| 0.111 | 5.5e-02 | 30.7142 ± 0.0508 | −0.117 | **0.0067** |
+| 0.222 | 8.7e-02 | 30.5500 ± 0.0618 | −0.281 | **0.0010** |
+| 0.444 | 1.2e-01 | 30.2850 ± 0.0459 | −0.546 | **<0.0001** |
+
+Performance falls **monotonically** with the injected error, and every dose is
+significant (paired *t*-test, independent unit = training seed, n = 5). At
+**8.7%** round-trip error the PR arm lands at **30.5500 dB** — on the fixed-Haar
+level (30.5591), the performance of an arm that never learned anything. The
+intervention thus supports the mechanism **causally**: an error of this magnitude
+is not merely correlated with the failure, it is *sufficient* to produce it.
+
+**Honest boundary.** The dose–response is somewhat *steeper* than the cross-arm
+comparison: at 11.8% error our injected arm reaches 30.2850 dB, below both the
+unconstrained arm (30.5341) and fixed Haar (30.5591). The unconstrained arm's
+mismatch lies in *both* its analysis and synthesis filters, whereas our injection
+perturbs synthesis only — the two defects are of the same magnitude but not of
+the same structure. We therefore claim **sufficiency at the same order of
+magnitude**, not exact reproduction of the unconstrained arm's error.
 
 PR-LWT keeps the round-trip error at the float32 limit while remaining fully
 adaptive. **This is the entire mechanism.**
 
 ---
 
-## 5. Discussion and Limitations
+## 6. Discussion and Limitations
 
 **Why we do not claim "lossless".** Perfect reconstruction guarantees a
 round-trip only when the coefficients are *unmodified*. Denoising modifies them
@@ -278,13 +412,19 @@ error the network must model, which is what allows adaptation to help.
 1. **Single dataset** (AAPM-Mayo). Generalisation to other CT data is untested.
 2. **Small test cohort** (2 patients in S1, 1 in S2). This is why we report
    per-patient results and use seeds as the unit of analysis.
-3. **No same-split comparison with real baselines.** The RED-CNN/CTformer numbers
-   are quoted from the literature; our training split has one fewer patient.
-4. **No downstream task** (e.g. segmentation) is evaluated.
+3. **Same-split baselines cover RED-CNN only.** RED-CNN was retrained by us under
+   our own splits and protocol (§5.1); CTformer and the remaining methods are
+   still quoted from the literature, and the training-set differences noted there
+   apply to them. Retraining further baselines was out of scope here.
+4. **The injected defect is structurally simpler than the real one.** We perturb
+   the synthesis filter only, whereas the unconstrained arm's two filter banks
+   drift apart independently. The intervention establishes sufficiency at
+   matched magnitude (§5.3), not exact reproduction of that arm's error.
+5. **No downstream task** (e.g. segmentation) is evaluated.
 
 ---
 
-## 6. Conclusion
+## 7. Conclusion
 
 We asked whether making the wavelet learnable helps LDCT denoising. By default,
 **it does not** — an unconstrained learnable wavelet performs exactly like a
@@ -299,15 +439,150 @@ be structural rather than hoped for.**
 
 ## References
 
-[1] H. Chen et al., "Low-dose CT via convolutional neural network," *Biomed. Opt.
-Express*, 2017.
-[2] W. Yang et al., "Improving low-dose CT image quality with a
-generative adversarial network," *IEEE Trans. Med. Imaging*, 2018.
-[3] Z. Huang et al., "DU-GAN," *IEEE Trans. Instrum. Meas.*, 2022.
-[4] Z. Zhao et al., "DCTformer," *Phys. Med. Biol.*, 2023.
-[5] I. Daubechies and W. Sweldens, "Factoring wavelet transforms into lifting
-steps," *J. Fourier Anal. Appl.*, 1998.
-【其余参考文献待补】
+> 全部条目经 Crossref / DataCite 一手元数据核验（作者、标题、卷期、页码、DOI）。
+> 凡核验中发现与常见网传版本不符者，均在下方就地注明。
+
+**低剂量 CT 去噪**
+
+[1] H. Chen, Y. Zhang, W. Zhang, P. Liao, K. Li, J. Zhou, and G. Wang,
+"Low-dose CT via convolutional neural network," *Biomed. Opt. Express*,
+vol. 8, no. 2, pp. 679–694, 2017.
+
+[2] Q. Yang, P. Yan, Y. Zhang, H. Yu, Y. Shi, X. Mou, M. K. Kalra, Y. Zhang,
+L. Sun, and G. Wang, "Low-dose CT image denoising using a generative
+adversarial network with Wasserstein distance and perceptual loss,"
+*IEEE Trans. Med. Imaging*, vol. 37, no. 6, pp. 1348–1357, 2018.
+
+[3] Z. Huang, J. Zhang, Y. Zhang, and H. Shan, "DU-GAN: Generative adversarial
+networks with dual-domain U-Net-based discriminators for low-dose CT
+denoising," *IEEE Trans. Instrum. Meas.*, vol. 71, pp. 1–12, 2022.
+*(注：网传 "Zhou et al., IEEE TMI 2022" 的署名为误。)*
+
+[4] D. Wang, F. Fan, Z. Wu, R. Liu, F. Wang, and H. Yu, "CTformer:
+Convolution-free Token2Token dilated vision transformer for low-dose CT
+denoising," *Phys. Med. Biol.*, vol. 68, no. 6, p. 065012, 2023.
+*(注：本文档 v1.0 曾误作 "Z. Zhao et al., DCTformer"。)*
+
+[5] Z. Zhang, L. Yu, X. Liang, W. Zhao, and L. Xing, "TransCT: Dual-path
+transformer for low dose computed tomography," in *MICCAI*, LNCS 12906,
+2021, pp. 55–64.
+
+[6] D. Wang, Z. Wu, and H. Yu, "TED-Net: Convolution-free T2T vision
+transformer-based encoder-decoder dilation network for low-dose CT
+denoising," in *MLMI*, LNCS 12966, 2021, pp. 416–425.
+
+[7] Z. Chen, C. Niu, Q. Gao, G. Wang, and H. Shan, "LIT-Former: Linking
+in-plane and through-plane transformers for simultaneous CT image denoising
+and deblurring," *IEEE Trans. Med. Imaging*, vol. 43, no. 5, pp. 1880–1894,
+2024.
+
+[8] Q. Gao, Z. Li, J. Zhang, Y. Zhang, and H. Shan, "CoreDiff: Contextual
+error-modulated generalized diffusion model for low-dose CT denoising and
+generalization," *IEEE Trans. Med. Imaging*, vol. 43, no. 2, pp. 745–759,
+2024.
+
+[9] Q. Gao, Z. Chen, D. Zeng, J. Zhang, J. Ma, and H. Shan, "Noise-inspired
+diffusion model for generalizable low-dose CT reconstruction," *Med. Image
+Anal.*, vol. 105, p. 103710, 2025.
+
+[10] Z. Chen, Q. Gao, Z. Li, J. Zhang, Y. Zhang, J. Zhao, and H. Shan,
+"FoundDiff: Foundational diffusion model for generalizable low-dose CT
+denoising," *IEEE Trans. Med. Imaging*, vol. 45, no. 8, pp. 4366–4379, 2026.
+
+[11] Q. Sun, T. Li, G. Wang, Y. Huang, S. Dong, L. Yu, K. Shi, Z. Yao, Y. Fu,
+and B. Hu, "WDBDM: Wavelet-based dual-branch diffusion model for low-dose CT
+and PET denoising," *Comput. Med. Imaging Graph.*, vol. 133, p. 102785, 2026.
+
+**轻量化 / 小波域 LDCT**
+
+[12] J. Li, H. Liu, X. Wang, and J. Hong, "Efficient low-dose CT image
+enhancement using MobileMamba-UNet with wavelet-enhanced long-range
+modeling," *J. Appl. Clin. Med. Phys.*, vol. 27, no. 7, p. e70680, 2026.
+
+[13] H. Tang, N. Que, Y. Tian, M. Li, A. Perelli, and Y. Teng, "MLAR-UNet:
+LDCT image denoising based on U-Net with multiple lightweight attention-based
+modules and residual reinforcement," *Phys. Med. Biol.*, vol. 70, no. 4,
+p. 045021, 2025.
+
+[14] Y. Yao, Y. Liang, W. Xiao, Z. Zhou, Y. Xu, Y. Pan, and X. Xia, "FMDNet:
+Spatial-frequency feature routing for low-dose CT denoising," *J. Appl. Clin.
+Med. Phys.*, vol. 27, no. 6, p. e70656, 2026.
+
+[15] L. Li, W. Wei, L. Yang, W. Zhang, J. Dong, Y. Liu, H. Huang, and W. Zhao,
+"CT-Mamba: A hybrid convolutional state space model for low-dose CT
+denoising," *Comput. Med. Imaging Graph.*, vol. 124, p. 102595, 2025.
+
+[16] J. Li, Y. Li, F. Qi, S. Wang, Z. Zhang, Z. Huang, and Z. Yu, "Lightweight
+network enhancing high-resolution feature representation for efficient low
+dose CT denoising," *IEEE J. Biomed. Health Inform.*, vol. 30, no. 1,
+pp. 564–574, 2026.
+
+**小波与多分辨率**
+
+[17] P. Liu, H. Zhang, K. Zhang, L. Lin, and W. Zuo, "Multi-level wavelet-CNN
+for image restoration," in *CVPRW*, 2018, pp. 773–782.
+
+[18] Q. Li, L. Shen, S. Guo, and Z. Lai, "Wavelet integrated CNNs for
+noise-robust image classification," in *CVPR*, 2020, pp. 7243–7252.
+
+[19] J.-J. Huang and P. L. Dragotti, "LINN: Lifting inspired invertible neural
+network for image denoising," in *EUSIPCO*, 2021, pp. 636–640.
+
+[20] J.-J. Huang and P. L. Dragotti, "WINNet: Wavelet-inspired invertible
+network for image denoising," *IEEE Trans. Image Process.*, vol. 31,
+pp. 4377–4392, 2022.
+
+[21] M. Wang, Z. Liu, K. Li, Y. Wang, Y. Wang, Y. Wei, and F. Wang,
+"Task-generalized adaptive cross-domain learning for multimodal image fusion,"
+*IEEE Trans. Multimedia*, vol. 28, pp. 4624–4637, 2026.
+
+[22] Q. Wang, Z. Li, S. Zhang, N. Chi, and Q. Dai, "WaveFusion: A novel
+wavelet vision transformer with saliency-guided enhancement for multimodal
+image fusion," *IEEE Trans. Circuits Syst. Video Technol.*, vol. 35, no. 8,
+pp. 7526–7542, 2025.
+
+**提升格式、完美重构与滤波器组**
+
+[23] I. Daubechies and W. Sweldens, "Factoring wavelet transforms into lifting
+steps," *J. Fourier Anal. Appl.*, vol. 4, no. 3, pp. 247–269, 1998.
+
+[24] W. Sweldens, "The lifting scheme: A custom-design construction of
+biorthogonal wavelets," *Appl. Comput. Harmon. Anal.*, vol. 3, no. 2,
+pp. 186–200, 1996.
+
+[25] M. Vetterli, "Filter banks allowing perfect reconstruction," *Signal
+Process.*, vol. 10, no. 3, pp. 219–244, 1986.
+
+[26] M. Vetterli and J. Kovačević, *Wavelets and Subband Coding*.
+Englewood Cliffs, NJ, USA: Prentice Hall, 1995.
+
+[27] D. L. Donoho and I. M. Johnstone, "Ideal spatial adaptation by wavelet
+shrinkage," *Biometrika*, vol. 81, no. 3, pp. 425–455, 1994.
+
+[28] D. L. Donoho, "De-noising by soft-thresholding," *IEEE Trans. Inf.
+Theory*, vol. 41, no. 3, pp. 613–627, 1995.
+
+[29] J. Bruna and S. Mallat, "Invariant scattering convolution networks,"
+*IEEE Trans. Pattern Anal. Mach. Intell.*, vol. 35, no. 8, pp. 1872–1886,
+2013.
+
+[30] J. Wang, Y. Chen, R. Chakraborty, and S. X. Yu, "Orthogonal convolutional
+neural networks," in *CVPR*, 2020, pp. 11502–11512.
+
+**数据集**
+
+[31] C. McCollough, B. Chen, D. R. Holmes III, X. Duan, Z. Yu, L. Yu, S. Leng,
+and J. Fletcher, "Low dose CT image and projection data
+(LDCT-and-Projection-data)," The Cancer Imaging Archive, 2020.
+doi: 10.7937/9NPB-2637.
+
+[32] T. R. Moen, B. Chen, D. R. Holmes, X. Duan, Z. Yu, L. Yu, S. Leng,
+J. G. Fletcher, and C. H. McCollough, "Low-dose CT image and projection
+dataset," *Med. Phys.*, vol. 48, no. 2, pp. 902–911, 2021.
+
+[33] J. Leuschner, M. Schmidt, D. O. Baguer, and P. Maass, "LoDoPaB-CT, a
+benchmark dataset for low-dose computed tomography reconstruction," *Sci.
+Data*, vol. 8, p. 109, 2021.
 
 ---
 

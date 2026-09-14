@@ -1,0 +1,10 @@
+{
+  "tag": "mis444_s2",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.47652115001623,
+  "elapsed_min": 4.530757788817088,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-14T13:02:45.560402+00:00"
+}

@@ -1,0 +1,45 @@
+{
+  "tag": "gate_neutral_sigmoid_seed1",
+  "created": "2026-09-12T09:35:14.882432+00:00",
+  "code_version": "6211e3fb28f9-dirty",
+  "seed": 1,
+  "epochs": 60,
+  "gate_type": "neutral_sigmoid",
+  "learnable_dwt": true,
+  "mid_channels": 32,
+  "patch_size": 128,
+  "batch_size": 4,
+  "oversample": 25,
+  "learning_rate": 0.001,
+  "loss": {
+    "alpha_ssim": 1.0,
+    "beta_l1": 10.0,
+    "gamma_grad": 5.0
+  },
+  "split_file": "splits\\ct_mri_screen_v1.json",
+  "split_ids": {
+    "train": [
+      "1",
+      "2",
+      "3",
+      "5",
+      "7",
+      "9"
+    ],
+    "val": [
+      "4",
+      "8"
+    ],
+    "test": [
+      "6",
+      "10"
+    ]
+  },
+  "select_metric": "SSIM",
+  "data_hash": {
+    "data/train/ct": "e92ec9b8ae77e9f0",
+    "data/test/ct": "dc603e782f588e96"
+  },
+  "device": "cuda",
+  "torch": "2.5.1+cu121"
+}

@@ -1,0 +1,44 @@
+{
+  "tag": "lit_redcnn_s0",
+  "model": "redcnn",
+  "created": "2026-09-14T08:10:34.899164+00:00",
+  "code_version": "1491a3387e6d-dirty",
+  "seed": 0,
+  "epochs": 30,
+  "batch_size": 8,
+  "patch": 128,
+  "learning_rate": 0.001,
+  "lr_milestones": [
+    15,
+    24,
+    27
+  ],
+  "levels": 2,
+  "mid_ch": 16,
+  "n_conv": 2,
+  "wavelet": "pr",
+  "global_residual": false,
+  "n_params": 1848865,
+  "param_report": {
+    "wavelet": 0,
+    "heads": 1848865,
+    "global": 0,
+    "total": 1848865,
+    "wavelet_frac": 0.0
+  },
+  "dataset": "aapm",
+  "data_root": "data\\aapm_h5",
+  "split_file": "splits/aapm_mayo_3mm_lit.json",
+  "n_train": 1943,
+  "n_val": 224,
+  "n_test": 211,
+  "slice_shape": [
+    512,
+    512
+  ],
+  "val_interval": 5,
+  "val_limit": null,
+  "test_limit": null,
+  "device": "cuda",
+  "torch": "2.5.1+cu121"
+}

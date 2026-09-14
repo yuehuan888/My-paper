@@ -92,13 +92,20 @@ class PRWaveletDenoiser(nn.Module):
     BANDS = ("LL2", "LH2", "HL2", "HH2", "LH1", "HL1", "HH1")
 
     def __init__(self, levels: int = 2, mid_ch: int = 16, n_conv: int = 2,
-                 wavelet: str = "pr", global_residual: bool = False):
+                 wavelet: str = "pr", global_residual: bool = False,
+                 synth_mismatch: float = 0.0):
         super().__init__()
         if wavelet not in ("pr", "fixed", "unconstrained"):
             raise ValueError(f"未知 wavelet={wavelet!r}")
         self.levels = levels
         self.wavelet_kind = wavelet
         self.global_residual = global_residual
+        # 受控闭环误差注入：>0 时，PR 臂的**合成**用 (1−ε)·U 而非 U。
+        # 用于干预实验——检验"闭环误差本身是否导致性能退化"。
+        # 默认 0.0，对已有结果零影响。
+        self.synth_mismatch = float(synth_mismatch)
+        if synth_mismatch and wavelet != "pr":
+            raise ValueError("synth_mismatch 只对 wavelet='pr' 有意义")
 
         if wavelet == "unconstrained":
             from .legacy_dwt import MultiLevelDWT, MultiLevelIDWT
@@ -107,7 +114,8 @@ class PRWaveletDenoiser(nn.Module):
             self.wavelet = None
         else:
             self.wavelet = MultiLevelLifting(levels=levels, n_taps=3,
-                                             learnable=(wavelet == "pr"))
+                                             learnable=(wavelet == "pr"),
+                                             synth_mismatch=synth_mismatch)
             self.dwt = self.idwt = None
         self.heads = nn.ModuleDict({b: BandHead(mid_ch, n_conv) for b in self.BANDS})
 

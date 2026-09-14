@@ -99,10 +99,18 @@ class _LiftingBank1D(nn.Module):
     """
 
     def __init__(self, n_taps: int = 3, learnable: bool = True,
-                 bound: float = 0.5):
+                 bound: float = 0.5, synth_mismatch: float = 0.0):
         super().__init__()
         self.n_taps = n_taps
         self.bound = float(bound)
+        # ---- 受控闭环误差注入（干预实验用）--------------------------------
+        # synth_mismatch = ε > 0 时，**合成**用的 U 变成 (1−ε)·U，而分解仍用 U。
+        # 这精确模拟了无约束臂的失效模式："逆变换不是正变换真正的逆"。
+        # 误差随 ε 线性增长，故可标定到指定量级。
+        #
+        # ⚠️ 这不是可学习参数，是**固定注入**。默认 0.0 = 正常的 PR-LWT，
+        #    行为与改动前完全一致（不影响任何已有结果）。
+        self.synth_mismatch = float(synth_mismatch)
         p0 = _lift_taps(n_taps, "predict")
         u0 = _lift_taps(n_taps, "update")
         self.register_buffer("p_init", p0)
@@ -123,6 +131,17 @@ class _LiftingBank1D(nn.Module):
     @property
     def U(self) -> torch.Tensor:
         return self.u_init + self.bound * torch.tanh(self.theta_U)
+
+    @property
+    def U_synth(self) -> torch.Tensor:
+        """**合成步**使用的 U。
+
+        synth_mismatch=0 时就是 U 本身（严格 PR）；>0 时按 (1−ε) 缩放，
+        从而使 reconstruct(decompose(x)) ≠ x，注入受控闭环误差。
+        """
+        if self.synth_mismatch == 0.0:
+            return self.U
+        return self.U * (1.0 - self.synth_mismatch)
 
     def drift(self) -> float:
         """参数相对 Haar 初始值的最大偏离量（诊断用）。"""
@@ -177,7 +196,8 @@ class _LiftingBank1D(nn.Module):
         if normalize:
             s = s / math.sqrt(2.0)
             d = d * math.sqrt(2.0)
-        xe = s - self._conv(d, self.U, axis)
+        # U_synth 在 synth_mismatch=0 时恒等于 U，故本改动对已有结果零影响
+        xe = s - self._conv(d, self.U_synth, axis)
         xo = d + self._conv(xe, self.P, axis)
         return self.merge(xe, xo, axis)
 
@@ -189,10 +209,11 @@ class LiftingWavelet2D(nn.Module):
     逆变换**按相反顺序**执行（高度先合成，再宽度合成）。
     """
 
-    def __init__(self, n_taps: int = 3, learnable: bool = True, bound: float = 0.5):
+    def __init__(self, n_taps: int = 3, learnable: bool = True, bound: float = 0.5,
+                 synth_mismatch: float = 0.0):
         super().__init__()
-        self.vert = _LiftingBank1D(n_taps, learnable, bound)    # 沿高度 (dim -2)
-        self.horiz = _LiftingBank1D(n_taps, learnable, bound)   # 沿宽度 (dim -1)
+        self.vert = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch)   # 沿高度 (dim -2)
+        self.horiz = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch)  # 沿宽度 (dim -1)
 
     def forward(self, x: torch.Tensor, normalize: bool = True):
         """子带命名与旧 `dwt_layer._haar_filters()` 对齐：
@@ -232,13 +253,15 @@ class MultiLevelLifting(nn.Module):
     BAND_NAMES = ("LL2", "LH2", "HL2", "HH2", "LH1", "HL1", "HH1")
 
     def __init__(self, levels: int = 2, n_taps: int = 3, learnable: bool = True,
-                 bound: float = 0.5):
+                 bound: float = 0.5, synth_mismatch: float = 0.0):
         super().__init__()
         self.levels = levels
         self.n_taps = n_taps
         self.bound = bound
+        self.synth_mismatch = float(synth_mismatch)
         self.banks = nn.ModuleList(
-            [LiftingWavelet2D(n_taps, learnable, bound) for _ in range(levels)]
+            [LiftingWavelet2D(n_taps, learnable, bound, synth_mismatch)
+             for _ in range(levels)]
         )
 
     def decompose(self, x: torch.Tensor, normalize: bool = True) -> dict:

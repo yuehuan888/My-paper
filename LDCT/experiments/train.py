@@ -81,9 +81,69 @@ def code_version() -> str:
         return "unavailable"
 
 
+# ------------------------------------------------------- 落盘与日志（可恢复性）
+#
+# 背景（2026-09-14）：RED-CNN 基线的 5 次运行（redcnn_s0/s1/s2、lit_redcnn_s0/s1）
+# 全部只剩下一个 config.json——因为旧版 train.py **只在 30 轮全部跑完的那一刻**
+# 才写 history.json / results.json，中途任何中断都等于从零开始。
+# 且 stdout 无落盘，进程一旦脱离终端即成黑盒：实测有进程跑了 33 分钟，
+# 期间**没有写过任何一个文件**，无法判断它在第几轮。
+#
+# 以下三件事修的就是这个：
+#   1. `_Tee`：stdout 同时进 runs/<tag>/train.log
+#   2. `_atomic_json`：先写 .tmp 再 os.replace，断电也不会留下半个文件
+#   3. 每轮落盘 progress.json / history.json / last.pth，并支持 --resume
+class _Tee:
+    """把 stdout 复制一份到日志文件。"""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s):
+        for st in self.streams:
+            try:
+                st.write(s)
+            except Exception:  # noqa: BLE001
+                pass
+        return len(s)
+
+    def flush(self):
+        for st in self.streams:
+            try:
+                st.flush()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def isatty(self):
+        return False
+
+
+def _atomic_json(path: str, obj) -> None:
+    """原子写 JSON：先写同目录 .tmp，再 os.replace 覆盖。
+
+    直接 open(path,'w') 写到一半断电/被杀，会留下截断的 JSON，
+    下次读取直接抛异常——本项目已经吃过一次。
+    """
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _install_log(run_dir: str):
+    """把 stdout 接到 run_dir/train.log，返回 (原始 stdout, 文件句柄)。"""
+    fh = open(os.path.join(run_dir, "train.log"), "a",
+              encoding="utf-8", buffering=1)
+    real = sys.stdout
+    sys.stdout = _Tee(real, fh)
+    return real, fh
+
+
 # ------------------------------------------------------------------ 评测
 @torch.no_grad()
-def evaluate(model, loader, device, limit=None, batch_eval=16):
+def evaluate(model, loader, device, limit=None, batch_eval=None):
     """评测，返回逐样本指标与均值。**在 GPU 上整批完成**。
 
     为什么必须整批：口径 A 的评测要跑 343~435 张 512×512 切片，
@@ -93,6 +153,30 @@ def evaluate(model, loader, device, limit=None, batch_eval=16):
     """
     if model is not None:
         model.eval()          # identity 基线时 model 为 None
+
+    # 评估批大小必须随模型规格调整。**下面是实测值，不是估计值**
+    # （experiments/probe_eval_batch.py，RTX 3050 Laptop 4GB，512×512 前向）：
+    #
+    #   RED-CNN (96 通道 + ConvTranspose2d)   bs=1 →  0.70 s /  489 MB
+    #                                         bs=2 → 34.17 s / 7025 MB
+    #                                         bs=4 → 41.26 s / 7603 MB
+    #   RED-CNN + cuDNN 关闭                   bs=2 →  6.87 s / 2994 MB
+    #
+    # 即 **batch 从 1 涨到 2，耗时跳 49 倍、显存跳 14 倍**，且关掉 cuDNN 后同一
+    # batch 快 5 倍 —— 根因是 cuDNN 为 RED-CNN 的 ConvTranspose2d 在这个 shape
+    # 上挑了一个 workspace 约 7 GB 的算法。4GB 的卡装不下，溢出到 WDDM 共享
+    # 内存，此后每次访问都走 PCIe。
+    #
+    # 代价有多大：一次验证 343 张，bs=2 要 172×34 s ≈ **97 分钟**，
+    # 六次验证 + 测试约 **12 小时**——这正是上一轮"跑了 33 分钟没有任何输出"
+    # 的真正原因，不是卡死，是在以 1/50 的速度爬。
+    #
+    # 批大小**不影响数值**：evaluate() 逐切片算 PSNR，ssim_torch 也是逐样本
+    # 返回（m.flatten(1).mean(1)），零填充在样本内完成。故 bs=1 与 bs=2 结果
+    # 逐位相同，只差速度。
+    if batch_eval is None:
+        n_par = sum(p.numel() for p in model.parameters()) if model is not None else 0
+        batch_eval = 16 if n_par < 100_000 else 1
 
     obs_list, gt_list = [], []
     for i, (obs, gt) in enumerate(loader):
@@ -146,6 +230,10 @@ def train(args):
     run_dir = os.path.join(HERE, "runs", args.tag)
     os.makedirs(run_dir, exist_ok=True)
 
+    real_stdout, log_fh = _install_log(run_dir)
+    print(f"\n{'=' * 78}\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
+          f"tag={args.tag}  日志 -> {os.path.join(run_dir, 'train.log')}")
+
     # 训练集载入内存：单线程逐样本开 gzip HDF5 极慢（实测一轮 30 分钟）
     tr = make_dataset(args.dataset, "train", split_file=args.split_file,
                       patch_size=args.patch, is_training=True, cache=True)
@@ -161,7 +249,8 @@ def train(args):
         model = PRWaveletDenoiser(levels=args.levels, mid_ch=args.mid_ch,
                                   n_conv=args.n_conv,
                                   wavelet=args.wavelet,
-                                  global_residual=args.global_residual).to(device)
+                                  global_residual=args.global_residual,
+                                  synth_mismatch=args.synth_mismatch).to(device)
     n_par = count_parameters(model)
     # 只有 PRWaveletDenoiser 提供参数构成与闭环诊断；RED-CNN 无此接口
     rep = (model.param_report() if hasattr(model, "param_report")
@@ -178,20 +267,26 @@ def train(args):
         "mid_ch": args.mid_ch, "n_conv": args.n_conv,
         "wavelet": args.wavelet,
         "global_residual": args.global_residual,
+        # 干预实验的注入强度。非 0 时本次运行是"被注入闭环误差的 PR 臂"，
+        # 结果不能与常规 pr 臂混为一谈——不记录就复原不出来。
+        "synth_mismatch": args.synth_mismatch,
         "n_params": n_par, "param_report": rep,
         "dataset": args.dataset,
         "data_root": os.path.relpath(AAPM_ROOT if args.dataset=="aapm" else DATA_ROOT, ROOT),
         "split_file": args.split_file or AAPM_SPLIT,
         "n_train": tr.n_slices, "n_val": va.n_slices, "n_test": te.n_slices,
         "slice_shape": tr.slice_shape(),
+        # 选模协议必须记录：val_interval 决定验证跑几次，直接决定总时长与
+        # "最优轮"的可比性。旧版漏记，导致事后无法复原两次运行是否同协议。
+        "val_interval": args.val_interval, "val_limit": args.val_limit,
+        "test_limit": args.test_limit,
         "device": str(device), "torch": torch.__version__,
     }
 
     milestones = [int(round(args.epochs * f)) for f in (0.5, 0.8, 0.9)]
     milestones = sorted(set(m for m in milestones if 0 < m < args.epochs))
     cfg["lr_milestones"] = milestones
-    with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    _atomic_json(os.path.join(run_dir, "config.json"), cfg)
 
     print("=" * 78)
     print(f"训练 {args.tag}")
@@ -222,9 +317,39 @@ def train(args):
 
     history = {"epoch": [], "train_l1": [], "val_psnr": [], "val_ssim": []}
     best = {"psnr": -np.inf, "epoch": None, "state": None, "val": None}
+    start_ep = 1
+
+    # ---- 断点续训：本机有反复杀进程的历史，没有这个功能就会一次次从零开始 ----
+    last_ckpt = os.path.join(run_dir, "last.pth")
+    if args.resume:
+        if not os.path.exists(last_ckpt):
+            print(f"  [resume] 没有 {last_ckpt}，从头开始")
+        else:
+            st = torch.load(last_ckpt, map_location=device, weights_only=False)
+            model.load_state_dict(st["model"])
+            optimizer.load_state_dict(st["optimizer"])
+            scheduler.load_state_dict(st["scheduler"])
+            if scaler is not None and st.get("scaler"):
+                scaler.load_state_dict(st["scaler"])
+            # MultiStepLR 的 milestones **不进 state_dict**（它是构造参数），
+            # 故换 --epochs 续训会静默改变学习率轨迹。这里显式拦一道。
+            old_ms = st.get("milestones")
+            if old_ms is not None and list(old_ms) != list(milestones):
+                print(f"  [resume] ⚠️  LR 衰减点不一致：存档 {list(old_ms)} "
+                      f"vs 本次 {milestones}。"
+                      f"（MultiStepLR 的 milestones 不进 state_dict）"
+                      f"续训请使用与原 run 相同的 --epochs。")
+            history, best = st["history"], st["best"]
+            start_ep = int(st["epoch"]) + 1
+            bp = best["psnr"]
+            print(f"  [resume] 已完成 {st['epoch']}/{args.epochs} 轮，"
+                  f"从 epoch {start_ep} 继续"
+                  + (f"（最好 val PSNR {bp:.4f} @ ep{best['epoch']}）"
+                     if best["epoch"] else ""))
+
     t0 = time.time()
 
-    for ep in range(1, args.epochs + 1):
+    for ep in range(start_ep, args.epochs + 1):
         model.train()
         losses = []
         for obs, gt in tr_loader:
@@ -267,6 +392,32 @@ def train(args):
         else:
             print(f"  epoch {ep:3d} | train L1 {train_l1:.5f}", flush=True)
 
+        # ---------------- 每轮落盘（本次修复的核心）----------------
+        # 旧版只在 30 轮全部跑完的那一刻才写结果，中途被杀 = 全部丢失。
+        # 实测已发生 5 次（redcnn_s0/s1/s2、lit_redcnn_s0/s1）。
+        _atomic_json(os.path.join(run_dir, "history.json"), history)
+        _atomic_json(os.path.join(run_dir, "progress.json"), {
+            "tag": args.tag, "epoch": ep, "epochs": args.epochs,
+            "best_epoch": best["epoch"],
+            "best_val_psnr": None if best["epoch"] is None else best["psnr"],
+            "elapsed_min": (time.time() - t0) / 60,
+            # 显存峰值：PR-LWT 实测 104 MB、RED-CNN 训练实测 104 MB、
+            # 512² 评测峰值 491 MB（见 experiments/probe_eval_mem.py）。
+            # 记下来是为了让"显存是不是瓶颈"变成可查的数字，而不是事后猜。
+            "peak_vram_mb": (round(torch.cuda.max_memory_allocated() / 1024 ** 2, 1)
+                             if device.type == "cuda" else None),
+            "updated": datetime.now(timezone.utc).isoformat(),
+        })
+        ck_tmp = last_ckpt + ".tmp"
+        torch.save({"epoch": ep,
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "scaler": scaler.state_dict() if scaler is not None else None,
+                    "milestones": milestones,
+                    "history": history, "best": best}, ck_tmp)
+        os.replace(ck_tmp, last_ckpt)
+
     wall = time.time() - t0
 
     # 用验证集选出的权重评测测试集
@@ -302,10 +453,8 @@ def train(args):
     torch.save({"epoch": best["epoch"], "model_state_dict": model.state_dict(),
                 "config": cfg}, ckpt)
     results["checkpoint"] = os.path.relpath(ckpt, ROOT)
-    with open(os.path.join(run_dir, "results.json"), "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-    with open(os.path.join(run_dir, "history.json"), "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+    _atomic_json(os.path.join(run_dir, "results.json"), results)
+    _atomic_json(os.path.join(run_dir, "history.json"), history)
 
     print("-" * 78)
     print(f"最优 epoch {best['epoch']}  (val PSNR {best['psnr']:.4f})   用时 {wall/60:.1f} min")
@@ -314,6 +463,19 @@ def train(args):
     for pid, v in sorted(per_patient.items()):
         print(f"   {pid}: PSNR {v['PSNR']:.4f}  SSIM {v['SSIM']:.4f}  (n={v['n']})")
     print(f"结果目录: {run_dir}")
+
+    # 完成标记：一行命令就能回答"这个 run 到底跑完了没"，
+    # 不必再去比对 config.json / history.json 哪个存在。
+    _atomic_json(os.path.join(run_dir, "DONE"), {
+        "tag": args.tag, "epoch": best["epoch"], "epochs": args.epochs,
+        "test_mean": te_mean, "wall_min": wall / 60,
+        "finished": datetime.now(timezone.utc).isoformat(),
+    })
+    print(f"✅ 完成标记: {os.path.join(run_dir, 'DONE')}")
+    print("=" * 78)
+
+    sys.stdout = real_stdout          # 还原 stdout，否则日志句柄会一直挂着
+    log_fh.close()
     return results
 
 
@@ -344,6 +506,12 @@ def main():
                          "unconstrained=旧式分离参数(可学习但无闭环保证)。"
                          "三臂分别回答不同问题，勿混。")
     ap.add_argument("--global-residual", action="store_true")
+    ap.add_argument("--synth-mismatch", type=float, default=0.0,
+                    help="干预实验：向 PR 臂注入受控闭环误差。合成用 (1-ε)·U，"
+                         "分解仍用 U。ε=0 时行为与普通 PR-LWT 完全一致。"
+                         "标定见 experiments/calibrate_mismatch.py")
+    ap.add_argument("--resume", action="store_true",
+                    help="从 runs/<tag>/last.pth 继续训练（每轮自动保存）")
     ap.add_argument("--val-interval", type=int, default=2)
     ap.add_argument("--val-limit", type=int, default=None,
                     help="验证时只评前 N 张（加速）")

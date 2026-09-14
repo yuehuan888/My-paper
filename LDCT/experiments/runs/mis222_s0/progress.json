@@ -1,0 +1,10 @@
+{
+  "tag": "mis222_s0",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.608917747920177,
+  "elapsed_min": 4.629120592276255,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-14T12:37:03.253809+00:00"
+}
