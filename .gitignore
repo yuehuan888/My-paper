@@ -1,39 +1,51 @@
 # ============================================================
-#  MGF-Net — 版本控制排除规则
-#  原则：只跟踪「源代码 + 文档 + 配置」；训练产物、数据集、
-#        第三方材料一律排除（理由见各行注释）
+#  可逆小波域低剂量 CT 去噪（PR-LWT）—— 版本控制排除规则
+#
+#  原则：只跟踪「源代码 + 文档 + 配置 + 实验结果」；
+#        数据集、第三方材料、可重新生成的产物一律排除。
 # ============================================================
 
+# ---------- 数据集（体积大，且都是公开可下载的） ----------
+# LDCT/data 共约 5 GB（aapm/ aapm_h5/ raw_aapm/），获取方式见 LDCT/data/download.sh
+#
+# 教训（2026-09-14）：上一版只排除了 raw/ 与 extracted/，而 aapm/、aapm_h5/、
+# raw_aapm/ **仍会被提交** —— 实测 4769 个文件，含 1.68 GB 的 .h5。
+# 而且 `*.hdf5` 这个模式**并不匹配** `.h5`。故改为排除整个 data/ 再逐个放回脚本。
+LDCT/data/*
+!LDCT/data/dataset.py
+!LDCT/data/prepare_aapm.py
+!LDCT/data/download.sh
+!LDCT/data/download_modelscope.sh
+*.hdf5
+
+# ---------- 训练与调试产物（可由脚本重新生成） ----------
+# ⚠️ 但 experiments/runs/<tag>/ 下的 config.json / results.json / history.json /
+#    DONE **必须入库** —— 它们是论文所有数字的来源。
+LDCT/outputs/
+*.pth
+*.ckpt
+*.npz
+*.log
+*.tmp
+
+# LaTeX 编译中间件（main.pdf 保留，便于直接查看）
+LDCT/paper/latex/*.aux
+LDCT/paper/latex/*.log
+LDCT/paper/latex/*.out
+LDCT/paper/latex/*.toc
+
 # ---------- 第三方材料（版权原因，禁止上传） ----------
-# 22 篇他人论文 PDF，约 304MB
+# 他人论文 PDF（约 300 MB）
 前沿论文下载/
-# EMFusion 官方代码与预训练权重（Xu & Ma, Information Fusion 2021）
+# EMFusion 官方代码与权重（Xu & Ma, Information Fusion 2021）
 EMFusion/
 emfusion_unpacked/
-# 他人论文原文
 EMFusion An unsupervised enhanced medical image fusion network.pdf
 # 从他人仓库复制的 README
 wavefusion_readme.md
 # 论文下载辅助脚本（指向上述第三方材料）
 dl_parallel.ps1
 resume_dl.ps1
-
-# ---------- 训练产物（可由代码重新生成） ----------
-MGF-Net/checkpoints/
-MGF-Net/outputs/
-*.pth
-*.ckpt
-*.npz
-
-# ---------- 数据集（体积大，且为公开数据集，见 MGF-Net/data/README.md） ----------
-MGF-Net/data/*
-# 例外：数据集本身不入库，但**清单与构建脚本**必须入库——
-# 它们是《发表路线与实验计划》要求的"可追溯划分"凭据
-!MGF-Net/data/README.md
-!MGF-Net/data/dataset.py
-!MGF-Net/data/build_manifest.py
-!MGF-Net/data/make_cv_splits.py
-!MGF-Net/data/manifest_*.csv
 
 # ---------- 构建产物 ----------
 __pycache__/
@@ -43,11 +55,9 @@ __pycache__/
 .venv/
 venv/
 env/
-MGF-Net/docx_unpacked/
 
 # ---------- 本地工具链 / 编辑器 ----------
 .claude/
-# 通配以覆盖 .workbuddy/、.workbuddy-ai/ 及后续可能出现的变体
 .workbuddy*/
 .vscode/
 .idea/
@@ -58,55 +68,14 @@ desktop.ini
 # ---------- 临时与草稿 ----------
 skills-lock.json
 s2_recofuse.json
-*.log
-*.tmp
 ~$*
+*.html
+ecf.txt
+ecf_raw.html
 
 # ---------- Office 文档（内容与同名 .md 重复，二进制无法 diff） ----------
 *.docx
-# 上述 .docx 的生成脚本（产物已排除，脚本成为孤岛）
-MGF-Net/generate_report*.js
-
-# ---------- 实验产物 ----------
-# 融合结果图与权重不入库（可由 run_experiment.py 重新生成）；
-# 但保留 config.json / results.json / history.json，便于追溯每次实验的配置与指标
-MGF-Net/experiments/runs/*/fused/
 
 # ---------- 调研 agent 的临时抓取产物 ----------
-# 这些是 workflow agent 运行时落到工作目录的中间文件（论文 PDF / HTML / 文本转储），
-# 不属于项目产物。保留在本地供查阅，但不入库。
-# 教训：agent 的工具调用默认以 cwd 为落盘位置，跑工作流前应先指定临时目录。
-MGF-Net/_verify/
-MGF-Net/_*.txt
-MGF-Net/ecfusion.pdf
-MGF-Net/ecfusion.txt
-MGF-Net/hmif.tar.gz
-MGF-Net/ov.txt
-MGF-Net/xm.txt
-*.html
-/tbl*.html
+# 个别已知的中间文件（HTML 转储已在上面按 *.html 排除）
 ecf.txt
-ecf_raw.html
-MGF-Net/nature*.txt
-
-# ---------- LDCT 项目 ----------
-# 数据集一律不入库：体积大（LDCT/data 共 97 GB）、且都是公开可下载的，
-# 获取方式写在 LDCT/data/README.md 里。
-#
-# 教训（2026-09-14）：上一版只排除了 raw/ 与 extracted/，而 aapm/、aapm_h5/、
-# raw_aapm/ **仍会被提交** —— 实测 4769 个文件，含 1.68 GB 的 .h5。
-# 而且 `*.hdf5` 这个模式**并不匹配** `.h5`。故改为排除整个 data/ 再逐个放回脚本。
-LDCT/data/*
-!LDCT/data/README.md
-!LDCT/data/dataset.py
-!LDCT/data/prepare_aapm.py
-!LDCT/data/download.sh
-!LDCT/data/download_modelscope.sh
-*.hdf5
-
-# 调试与训练产物（可由脚本重新生成；留在本地只会干扰阅读）
-LDCT/outputs/
-LDCT/paper/latex/*.aux
-LDCT/paper/latex/*.log
-LDCT/paper/latex/*.out
-LDCT/paper/latex/*.toc

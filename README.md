@@ -1,64 +1,67 @@
-# MGF-Net
+# 可逆小波域低剂量 CT 去噪（PR-LWT）
 
-**多尺度门控频域融合网络（Multi-scale Gated Frequency Fusion Network）** —— 面向医学图像融合（CT-MRI），主打**轻量化**与**频域自适应**。
+**让可学习小波的可逆性由结构保证，而不是寄希望于它自己成立。**
 
-> 🚧 **项目状态：开发中（Phase A）**
-> 当前代码为 v2 基线实现。正在按 [`发表路线与实验计划_2026-09-12.md`](发表路线与实验计划_2026-09-12.md) 重构评价协议与核心模块，
-> **仓库中暂不包含可引用的实验结论**。论文中报告的数字请以下一版 README 为准。
+> 📄 论文初稿已完稿，目标 EI 会议（ICIP / EUSIPCO / ICME），投稿准备中。
+> 全部数字来自已完成的实验，无占位符。
 
 ---
 
-## 方法概述
+## 一句话结论
 
-MGF-Net 在**小波频域**中完成跨模态融合，而非在像素域直接融合。整体流程：
+在小波域去噪里让变换本身可学习，**默认是无效的**——无约束的可学习分析/合成滤波器对
+在训练中会丢掉可逆性，最终表现与固定 Haar 基**无法区分**（p = 0.11）。
+把可逆性**由结构保证**（提升格式，逆变换复用正向滤波器）之后，学习才产生收益（+0.27 dB，p = 0.0004）。
 
-```
-CT ──┐
-     ├─► 多级频域分解 ──► 逐子带门控融合 ──► 跨频段协调 ──► 逆变换 ──► 边缘精炼 ──► 融合图
-MRI ─┘   (7 子带)        (CMGF)             (CrossBand)              (EAR)
-```
+**而且这是因果，不只是相关**：向本来可逆的 PR 臂**人为注入**一个受控的闭环误差，
+它会单调退化到固定 Haar 水平（n = 5 种子，每档 p ≤ 0.007）。
 
-| 模块 | 说明 | 位置 |
+---
+
+## 核心实验
+
+### 三臂对照（S1 划分，5 种子；S2 划分，3 种子）
+
+| 臂 | 小波 | 可学习 | 可逆性保证 | 小波参数 | S1 PSNR |
+|---|---|---|---|---|---|
+| `pr` | 提升格式 | ✓ | **✓（结构保证）** | 24 | **30.8314 ± 0.0815** |
+| `unconstrained` | 分离正/逆滤波器 | ✓ | ✗ | 64 | 30.5341 ± 0.0305 |
+| `fixed` | 正交归一 Haar | ✗ | ✓ | 0 | 30.5591 ± 0.0256 |
+
+关键配对检验（独立单元 = **训练种子**，非测试切片）：
+
+| 比较 | Δ (dB) | p |
 |---|---|---|
-| **多级频域分解** | 2 级小波分解，得到 7 个子带 `{LL2, LH2, HL2, HH2, LH1, HL1, HH1}`，滤波器参数可端到端学习 | `models/dwt_layer.py` |
-| **跨模态门控融合 (CMGF)** | 每个子带独立的轻量融合块，以 CT 为基底、学习注入 MRI 细节的权重（残差式，非凸组合） | `models/gated_fusion.py` |
-| **跨频段协调** | 轻量 SE 式注意力，建模子带间的相关性 | `models/gated_fusion.py` |
-| **边缘感知精炼 (EAR)** | 由两源图与初始融合图提取梯度图，引导残差精炼，增强骨骼与组织边界 | `models/edge_refine.py` |
+| `pr` − `unconstrained` | **+0.2973** | **0.0005** |
+| `pr` − `fixed` | **+0.2723** | **0.0004** |
+| `unconstrained` − `fixed` | −0.0251 | 0.113（**无法区分**） |
 
-**设计动机**：医学图像具有明确的频域分工——CT 骨骼边缘以高频为主、MRI 软组织纹理偏中频、功能影像（PET/SPECT）信息集中在低频。在频域中按子带分别决策融合策略，比在像素域做全局平均/取最大更符合数据特性。
+### 干预实验（因果）
 
----
+让 **PR 臂**的合成步使用 `(1−ε)·U` 而分解仍用 `U`，隔离复现无约束臂的缺陷：
 
-## 快速开始
+| 注入 ε | 实测闭环 | 测试 PSNR | 配对 p |
+|---|---|---|---|
+| 0（对照） | 1.6e-07 | 30.8314 | — |
+| 0.111 | 5.5% | 30.7142 | 0.0067 |
+| 0.222 | 8.7% | **30.5500** | 0.0010 |
+| 0.444 | 11.8% | 30.2850 | <0.0001 |
 
-### 环境
+**8.7% 误差处落到固定 Haar 水平（30.5591）** —— 一个"什么都没学到"的臂的表现。
 
-```bash
-pip install -r MGF-Net/requirements.txt
-```
+### 同划分基线
 
-开发环境：Python 3.10 / PyTorch 2.6 + CUDA 12.4。
-本项目的设计目标之一是**可在消费级 GPU 上训练**（实测 RTX 3050 Laptop 4GB 可跑通）。
+| 划分 | 方法 | 参数量 | PSNR |
+|---|---|---|---|
+| S1 | PR-LWT（本文） | **2,159** | 30.8314 |
+| S1 | RED-CNN（**我们同协议复现**） | 1,848,865 | 31.8310 |
+| S2 | PR-LWT（本文） | **2,159** | 31.9731 |
+| S2 | RED-CNN（**我们同协议复现**） | 1,848,865 | **32.9471** |
+| S2 | RED-CNN（文献报告值） | ~10⁶ | ≈ 32.93 |
 
-### 数据准备
-
-见 [`MGF-Net/data/README.md`](MGF-Net/data/README.md)。数据集不随仓库分发。
-
-### 训练
-
-```bash
-cd MGF-Net
-python train.py
-```
-
-### 测试
-
-```bash
-cd MGF-Net
-python test.py
-```
-
-配置项集中在 `MGF-Net/config.py`。
+> 我们在 L506 上复现的 RED-CNN 是 **32.9471**，与文献的 32.93 相差 **0.017 dB** ——
+> 这独立验证了实现与评测口径。**PR-LWT 在 PSNR 上并未击败 RED-CNN**（差约 1.0 dB），
+> 但参数量少 **857 倍**。本文的主张是*什么让可学习变换产生收益*，不是刷 SOTA。
 
 ---
 
@@ -66,104 +69,129 @@ python test.py
 
 ```
 .
-├── MGF-Net/                          # 代码
+├── LDCT/                              # ⭐ 当前项目
 │   ├── models/
-│   │   ├── mgf_net.py                # 主模型（wavelet / gate_type 双开关）
-│   │   ├── lifting_dwt.py            # ⭐ PR-LWT：可逆性由结构保证的可学习小波
-│   │   ├── dwt_layer.py              # 旧的分离式小波（保留作对照）
-│   │   ├── gated_fusion.py           # 跨模态门控融合 + 跨频段注意力
-│   │   └── edge_refine.py            # 边缘感知精炼
-│   ├── utils/
-│   │   └── metrics.py                # ⭐ 10 项标准融合指标
-│   ├── tests/
-│   │   ├── test_metrics_invariants.py  # 指标 L0 不变量测试
-│   │   └── test_lifting_pr.py          # PR-LWT 完美重构验证
-│   ├── experiments/
-│   │   ├── run_experiment.py         # ⭐ 单实验运行器（固定种子、验证集选模）
-│   │   ├── aggregate.py              # 跨种子汇总
-│   │   └── inspect_gate.py           # 门控权重分布检查
+│   │   ├── lifting_dwt.py             # ⭐ PR-LWT：提升格式，正逆共享 P/U
+│   │   ├── denoiser.py                # 子带残差去噪网络（2,159 参数）
+│   │   ├── legacy_dwt.py              # 旧式分离参数小波（unconstrained 对照臂）
+│   │   └── redcnn.py                  # RED-CNN 基线
+│   ├── utils/metrics.py               # 口径 A：RED-CNN/CTformer 谱系
 │   ├── data/
-│   │   ├── dataset.py                # 数据加载（显式 ID / 路径对）
-│   │   ├── build_manifest.py         # ⭐ 清单与病例级划分构建
-│   │   ├── manifest_ct_mri.csv       # 184 对逐图清单
-│   │   └── README.md                 # 数据集获取说明
-│   ├── splits/
-│   │   ├── ct_mri_case_v1.json       # ⭐ 病例级划分 + 切片级随机对照
-│   │   └── ct_mri_screen_v1.json     # 早期筛查划分（已过时）
-│   ├── evaluate.py                   # 批量评价 CLI
-│   ├── diagnose_step1.py             # 审计脚本
-│   ├── losses.py / config.py
-│   ├── train.py / test.py            # 旧入口（已被 experiments/ 取代）
-│   ├── compare_baselines.py / generate_figures.py
-│   ├── requirements.txt
-│   └── 工作进展报告_MGF-Net.md        # 历史文档（数字与代码不符，见实验记录 §9.2）
+│   │   ├── dataset.py, prepare_aapm.py
+│   │   └── download.sh                # 数据集获取（不入库，见 .gitignore）
+│   ├── experiments/
+│   │   ├── train.py                   # ⭐ 训练/评测主入口（逐轮落盘 + --resume）
+│   │   ├── analyze_arms.py            # 三臂统计（配对 t 检验 + CI）
+│   │   ├── analyze_intervention.py    # ⭐ 干预实验的剂量-响应
+│   │   ├── calibrate_mismatch.py      # 标定注入强度 ε
+│   │   ├── verify_roundtrip.py        # 闭环误差测量（含从 checkpoint 复测）
+│   │   ├── identity_floors.py         # 逐患者 identity 地板
+│   │   ├── make_figures.py            # 论文图表
+│   │   ├── run_redcnn_baselines.ps1   # 同划分 RED-CNN 基线
+│   │   ├── run_intervention.ps1       # 干预实验（3 档 ε × 5 种子）
+│   │   └── runs/<tag>/                # 每次运行的 config / results / DONE
+│   ├── tests/
+│   │   ├── test_lifting_pr.py         # PR 完美重构验证（含奇偶尺寸、AMP）
+│   │   └── test_eval_batch_equiv.py   # 验证评测批大小不改变数值
+│   └── paper/
+│       ├── conference_paper.md        # ⭐ 英文稿（投稿用）
+│       ├── conference_paper_zh.md     # 中文对照版（仅供审阅）
+│       └── latex/main.tex             # IEEEtran 版（tectonic main.tex 编译）
 │
-├── MGF-Net_实验记录_2026-09-12.md     # ⭐⭐ 本轮完整记录，从这里开始读
-├── MGF-Net_审计报告_Step1_2026-09-12.md
-├── MGF-Net_实验报告_门控对照_2026-09-12.md
-├── 对比协议调研_2026-09-12.md         # 领域对比协议（107-agent 调研）
-├── 发表路线与实验计划_2026-09-12.md    # 路线图（已被修订版替代）
-├── 发表路线与实验计划_2026-09-12_修订版.md
-├── 前沿调研报告_图像融合2024-2026.md
-├── 前沿调研报告_图像融合2024-2026_复核补充版.md
-├── 图像融合顶刊论文及源码汇总_2022-2026.md
-├── 图像融合汇总表_勘误与补全_2026-09-12.md
-│
-├── LICENSE
-└── README.md
+├── EI会议调研_2026-09-14.md             # 投哪个会、截稿、EI 依据
+├── LDCT投稿路线_2026-09-13.md           # 期刊路线（备用）
+├── LDCT_三臂对照结果_2026-09-13.md       # ⚠️ 其中「99%」已过时，见下文
+├── LDCT_HU口径核查_2026-09-13.md
+├── 替代方向调研_2026-09-13.md
+├── PR-LWT决断报告_2026-09-12.md
+└── LICENSE
 ```
 
-> 📄 根目录的调研文档只包含**书目信息与分析**（作者、标题、会议/期刊、DOI、方法评述），
-> **不包含任何论文 PDF 原文**。
+> ⚠️ **历史文档的已知错误**：`LDCT_三臂对照结果_2026-09-13.md` 与 `LDCT投稿路线_2026-09-13.md`
+> 中写的「闭环误差 **99%**」**是错的**，实测为 **12.5–14.5%**；`LDCT投稿路线` 把 **WE-UNet**
+> 列为 LDCT 同题材论文也不对（它是**胸片**辐射剂量论文）。论文正文已更正，历史文档未回改。
 
 ---
 
-## 路线图
+## 复现
 
-完整计划见 [`发表路线与实验计划_2026-09-12.md`](发表路线与实验计划_2026-09-12.md)。
+```bash
+cd LDCT
+PY=D:/DeveloperTools/miniconda/envs/mgfnet/python.exe
 
-| 阶段 | 内容 | 状态 |
-|---|---|---|
-| Phase A | 标准评价协议、可追溯的数据清单与病例级划分 | ✅ 完成 |
-| Phase B | 核心模块重构（PR-LWT）+ 门控修正 + 消融实验 | 🚧 进行中 |
-| Phase C | 真实基线对比、论文撰写与投稿 | ⏳ 待开始 |
+# 数据（需先下载 AAPM-Mayo，见 data/download.sh 与 data/README）
+$PY data/prepare_aapm.py
 
-### 已有结果（详见 `MGF-Net_实验记录_2026-09-12.md`）
+# identity 地板
+$PY experiments/train.py --baseline-only
 
-- **门控饱和**：原式 `tanh(g)·0.4` 使 99.13% 的像素贴在 +0.4 上限，门控退化为常数。
-  改为中性 sigmoid 门控后权重铺满 [0.007, 0.977]，10 项指标赢 9 项。
-- **PR-LWT**：变换闭环相对误差由 `6.09e-01` 降至 `1.40e-07`，参数量还少 40 个。
-  并发现"有 PR 保证 ≠ 数值稳定"，需对提升滤波器参数做有界化。
-- **数据泄漏**：ASFE-Fusion 数据集的 ID 含病例结构（184 张 = 10 病例 × 16–21 层）。
-  复现领域惯例的切片级随机划分后，10 个病例中 9 个跨训练/测试集。
+# 三臂对照
+for w in pr unconstrained fixed; do
+  $PY experiments/train.py --tag w3_${w}_s0 --wavelet $w \
+     --epochs 30 --patch 128 --batch-size 8 --seed 0 --val-interval 5
+done
+$PY experiments/analyze_arms.py --prefix w3_        # S1
+$PY experiments/analyze_arms.py --prefix lit_       # S2
 
-> ⚠️ 以上均为**机制层**验证。**融合质量是否改善尚未验证**——
-> PR 只保证"系数未被修改"时的闭环，而融合恰恰要修改系数。
+# 干预实验（因果）
+$PY experiments/calibrate_mismatch.py               # 标定 ε
+powershell -File experiments/run_intervention.ps1    # 3 档 × 5 种子
+$PY experiments/analyze_intervention.py
 
----
+# RED-CNN 同划分基线
+powershell -File experiments/run_redcnn_baselines.ps1
 
-## 关于第三方材料
+# 图表与论文
+$PY experiments/make_figures.py
+cd paper/latex && tectonic main.tex                  # 需装 tectonic
+```
 
-本仓库**不包含**以下内容，请自行获取：
-
-- **数据集** —— 见 `MGF-Net/data/README.md`
-- **对比方法的代码与预训练权重** —— 请访问 U2Fusion、SwinFusion、CDDFuse、SeAFusion、EMFusion 等方法的官方仓库
-- **参考文献原文** —— 调研文档中仅保留书目信息（作者、标题、会议/期刊、DOI），不含 PDF 文件
-
----
-
-## 引用
-
-论文发表后补充。
+**判断"跑完了没"看 `experiments/runs/<tag>/DONE`；看进度看同目录 `progress.json`。**
+任何一次运行被打断，用 `--resume` 接着跑，不必从零开始。
 
 ---
 
-## 致谢
+## 环境与注意事项
 
-本项目的对比实验基于以下开源工作，一并致谢：U2Fusion、EMFusion、SwinFusion、CDDFuse、SeAFusion。
-文献调研部分受益于 [Awesome-Image-Fusion](https://github.com/GeoVectorMatrix/Awesome-Image-Fusion) 等汇总项目。
+- Python 3.10 / PyTorch 2.5.1+cu121 / CUDA；实测 **RTX 3050 Laptop 4GB** 可跑通
+- **评测批大小必须为 1**（大模型）：cuDNN 对 `ConvTranspose2d` 在 512² 且 batch ≥ 2 时
+  会选一个 workspace 约 7 GB 的算法，4GB 卡装不下 → 溢出到 WDDM 共享内存 → 耗时跳 49 倍。
+  已用 `tests/test_eval_batch_equiv.py` 验证批大小**不改变数值**。
+- 本机的 `.ps1` 脚本**必须纯 ASCII**：PowerShell 5.1 读无 BOM 的 .ps1 会按 GBK 解码，
+  中文全角标点会吃掉引号导致脚本静默失效。
+
+---
+
+## 诚实边界
+
+1. **单一数据集**（AAPM-Mayo）。跨库泛化未验证 —— LoDoPaB-CT 我们考察后放弃：
+   它是**重建**基准（observation 是 sinogram），不先做 FBP 无法用作零样本去噪测试。
+2. **测试队列小**（S1 两位患者，S2 一位）。故全部逐患者报告、以种子为分析单元。
+3. **同划分基线只覆盖 RED-CNN**；CTformer 等仍引自文献。
+4. **注入的缺陷比真实的更简单**：只扰动合成侧，而无约束臂是分析/合成两组滤波器
+   各自漂移。干预确立的是**同量级下的充分性**，不是精确复现。
+5. **未做下游任务验证**（如分割）。
+
+---
+
+## 定位说明
+
+提升格式（lifting scheme）本身是小波社区 1990 年代的成熟工具，
+**LINN（EUSIPCO 2021）与 WINNet（IEEE TIP 2022）已经**用提升格式构建可逆去噪网络，
+且 WINNet 已在保持完美重构的前提下学习滤波器 taps。
+
+**本文不宣称提出了新的小波或新的架构。** 本文的贡献是那个**缺失的对照**：
+先前的可逆小波去噪方法*假设*了结构性可逆、从未检验其缺失，
+因此观察不到"没有它会怎样"。让可逆性变成**可选项**、固定其余一切并测量后果，
+是本文做的事。
+
+---
+
+## 第三方材料
+
+本仓库**不包含**：数据集（体积大，公开可下）、他人论文 PDF、第三方方法源码。
+调研文档只保留书目信息（作者、标题、会议/期刊、DOI）。
 
 ## 许可
 
-代码部分采用 MIT 许可，见 [`LICENSE`](LICENSE)。
-`docs/` 下的调研文档采用 CC BY 4.0。
+代码采用 MIT 许可，见 [`LICENSE`](LICENSE)。
