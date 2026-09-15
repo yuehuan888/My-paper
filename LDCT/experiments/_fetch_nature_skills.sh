@@ -60,15 +60,38 @@ while IFS= read -r p; do
     if [ -s "$out" ]; then              # resumable: skip already-fetched
         n=$((n+1)); continue
     fi
+    # raw.githubusercontent 经本机加速器会**间歇性**返回 502（实测：连续 2 次
+    # 502 后第 3 次 200）。故退避到 ~30s，共 8 次；仍失败则走 API contents 路由
+    # （返回 base64，需要解码，但走的 API 网关与 raw 不同，故障域独立）。
     ok=0
-    for try in 1 2 3; do
-        if curl -sL --ssl-revoke-best-effort --max-time 90 \
-             "https://raw.githubusercontent.com/$REPO/$BRANCH/$p" -o "$out" \
-           && [ -s "$out" ]; then
-            ok=1; break
+    for try in 1 2 3 4 5 6 7 8; do
+        code=$(curl -sL --ssl-revoke-best-effort --max-time 90 \
+                 -o "$out.tmp" -w "%{http_code}" \
+                 "https://raw.githubusercontent.com/$REPO/$BRANCH/$p" 2>/dev/null)
+        sz=$(stat -c%s "$out.tmp" 2>/dev/null || echo 0)
+        # 502 的响应体是 52 字节的错误文本，不能当成文件内容
+        if [ "$code" = "200" ] && [ "$sz" -gt 60 ]; then
+            mv "$out.tmp" "$out"; ok=1; break
         fi
-        sleep 2
+        rm -f "$out.tmp"
+        sleep $((try * 4))
     done
+    if [ "$ok" -ne 1 ]; then
+        # 兜底：API contents（base64）
+        code=$(curl -s --ssl-revoke-best-effort --max-time 90 -w "%{http_code}" \
+                 -o "$out.api" "https://api.github.com/repos/$REPO/contents/$p?ref=$BRANCH" 2>/dev/null)
+        if [ "$code" = "200" ]; then
+            python -c "
+import json,sys,base64,io
+try:
+    d=json.load(io.open(sys.argv[1],encoding='utf-8'))
+    io.open(sys.argv[2],'wb').write(base64.b64decode(d['content']))
+except Exception as e:
+    sys.exit('decode failed: %s'%e)
+" "$out.api" "$out" 2>/dev/null && ok=1
+        fi
+        rm -f "$out.api"
+    fi
     if [ "$ok" -eq 1 ]; then n=$((n+1)); else fail=$((fail+1)); echo "  FAILED: $p"; fi
 done < "$TMP/paths.txt"
 

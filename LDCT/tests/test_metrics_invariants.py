@@ -4,6 +4,16 @@ L0 层指标不变量测试（LDCT 版）。
 这一层**不需要外部参考值**，只用数学上必须成立的性质抓实现错误。
 参照 MGF-Net 的同类测试——那次它抓出了三类问题，其中一类还是测试自身写错。
 
+⚠️ 2026-09-15：本文件此前**停留在 data_range=1.0 时代**，与实现严重脱节。
+    git 证据：本文件最后改动于 09a6d35（项目创建，当时 `DATA_RANGE = 1.0`），
+    而 7c282fc「切换到口径 A」把实现改成了 `DATA_RANGE = EVAL_HI - EVAL_LO = 400`，
+    本文件**之后从未更新**。后果：4 个测试长期假失败，安全网失效——
+    真 bug 会淹没在噪声里。
+    已按口径 A 重写解析类断言（见 `_windowed_phantom`）。
+    **不要再把 [0,1] 全幅随机图直接喂给口径 A 的指标**：那会先把 HU 反归一化到
+    [-1024, 3072]，再被 clip 到 [-160, 240]，绝大多数像素被压成常数，
+    误差被人为抹平，得到的 dB 值没有解析意义。
+
 运行：
     python tests/test_metrics_invariants.py
 """
@@ -32,6 +42,29 @@ def _phantom(h=128, w=128, seed=0):
     return np.clip(base, 0, 1)
 
 
+def _windowed_phantom(h=64, w=64, seed=0):
+    """落在**口径 A 的 HU 窗内**的合成图，用于解析校验。
+
+    口径 A：`x = (HU + 1024) / 4096`，评测时反归一化并把预测与参考**同时**
+    clip 到 `[-160, 240]` HU。故只有当整幅图都落在该窗内时，clip 才是恒等的、
+    `PSNR = 20·log10(400 / RMSE_HU)` 才有解析意义。
+
+    本函数把值限制在归一化域的 `[-160,240] HU` 对应的区间
+    `[(−160+1024)/4096, (240+1024)/4096] = [0.2109, 0.3086]`，并留出 ±ε 余量。
+    """
+    lo = (-160.0 + 1024.0) / 4096.0
+    hi = (240.0 + 1024.0) / 4096.0
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:h, 0:w]
+    # 起伏幅度取窗宽的 ±0.22（即两侧各留 0.28 窗宽的余量）。
+    # ⚠️ 余量必须显式留够：窗宽只有 400/4096 ≈ 9.8% 的归一化域，
+    #    8 bit 量化步长 1/255 ≈ 0.39% 就相当于 **16 HU**，噪声也很容易顶到窗边。
+    #    早期版本用 ±0.35 且 σ 取到 0.016，3σ 直接越窗，解析式失效。
+    base = 0.5 * (np.sin(xx / 11.0) * np.cos(yy / 13.0))
+    base = lo + (hi - lo) * (0.5 + 0.22 * base)
+    return np.clip(base + rng.normal(0, 1e-5, size=(h, w)), lo, hi)
+
+
 def test_identity():
     """pred == target 时 PSNR = inf，SSIM = 1。"""
     x = _phantom()
@@ -41,15 +74,25 @@ def test_identity():
 
 
 def test_constant():
-    """常量图：相同则 PSNR=inf/SSIM=1；不同则有限且无 NaN。"""
-    c = np.full((64, 64), 0.4)
-    d = np.full((64, 64), 0.6)
+    """常量图：相同则 PSNR=inf/SSIM=1；**窗内**不同值则有限且无 NaN。
+
+    ⚠️ 口径 A 下必须选**窗内**的两个值。0.4 / 0.6 反归一化后是 614 / 1434 HU，
+    两者都被 clip 到上界 240 → 误差被抹成 0 → PSNR=inf，测试会假失败。
+    """
+    lo = (-160.0 + 1024.0) / 4096.0
+    hi = (240.0 + 1024.0) / 4096.0
+    c = np.full((64, 64), lo + 0.15 * (hi - lo))
+    d = np.full((64, 64), lo + 0.45 * (hi - lo))
     assert M.psnr(c, c) == float("inf")
     assert abs(M.ssim(c, c) - 1.0) < 1e-10
     p, s = M.psnr(c, d), M.ssim(c, d)
-    assert np.isfinite(p) and np.isfinite(s), f"常量图不同值应有限，得 PSNR={p} SSIM={s}"
-    print(f"  [2] 常量图无 NaN                          OK  "
-          f"(0.4 vs 0.6: PSNR={p:.2f} SSIM={s:.4f})")
+    assert np.isfinite(p) and np.isfinite(s), f"窗内常量图不同值应有限，得 PSNR={p} SSIM={s}"
+    # 窗内常量图：解析值 PSNR = 20·log10(400 / Δ_HU)
+    d_hu = abs(d[0, 0] - c[0, 0]) * 4096.0
+    assert abs(p - 20.0 * np.log10(400.0 / d_hu)) < 1e-6, \
+        f"窗内常量图 PSNR 应为解析值 {20*np.log10(400/d_hu):.4f}，得 {p:.4f}"
+    print(f"  [2] 常量图（窗内）无 NaN                  OK  "
+          f"(Δ={d_hu:.1f} HU: PSNR={p:.2f} SSIM={s:.4f})")
 
 
 def test_value_ranges():
@@ -79,39 +122,62 @@ def test_monotonic_degradation():
 
 
 def test_psnr_analytic():
-    """PSNR 的解析校验：均匀误差 ε 时 PSNR = -20·log10(ε)。"""
-    x = _phantom(64, 64)
-    for eps in [0.01, 0.05, 0.1]:
-        y = np.clip(x + eps, 0, 1)
-        # 若触及边界则跳过（截断会改变实际误差）
-        if np.any((x + eps > 1.0) | (x + eps < 0.0)):
+    """PSNR 的解析校验（口径 A）：窗内、均匀误差时 PSNR = 20·log10(400 / ε_HU)。
+
+    归一化域的误差 ε 对应 HU 域的 ε_HU = ε · 4096。
+    """
+    x = _windowed_phantom(64, 64)
+    for eps in [0.002, 0.005, 0.01]:
+        y = x + eps
+        # 窗内图必须留有余量，触边则 clip 不再是恒等，解析式失效
+        if np.any(y > (240.0 + 1024.0) / 4096.0) or np.any(y < (-160.0 + 1024.0) / 4096.0):
             continue
-        expect = -20.0 * np.log10(eps)
+        expect = 20.0 * np.log10(400.0 / (eps * 4096.0))
         got = M.psnr(y, x)
         assert abs(got - expect) < 1e-6, f"ε={eps}: 得 {got:.6f}，应 {expect:.6f}"
-        print(f"  [5] PSNR 解析校验 ε={eps}: {got:.4f} dB (期望 {expect:.4f})  OK")
+        print(f"  [5] PSNR 解析校验 ε={eps} (={eps*4096:.2f} HU): "
+              f"{got:.4f} dB (期望 {expect:.4f})  OK")
         return
-    print("  [5] PSNR 解析校验  跳过（合成图触边）")
+    raise AssertionError("合成图触边，解析校验未能执行——请调小 ε 或收窄 _windowed_phantom 幅度")
 
 
 def test_scale_consistency():
-    """同一图以 float[0,1] 与 uint8 两种方式喂入，结果应一致。
+    """量化到 8 bit 往返后，指标应几乎不变。
 
-    这一条直接抓"量纲搞错"这类最隐蔽的错误——
-    MGF-Net 项目里就有过 [0,1] 与 [0,255] 混用导致 SD 差 255 倍的实例。
+    原意是抓"量纲搞错"。⚠️ 口径 A 的指标**约定输入为 [0,1] 归一化域**，
+    所以 uint8 路径必须先除回 255 再喂入；直接喂 0–255 的整数是量纲错误，
+    会先把 (HU+1024)/4096 算成一个荒谬的 HU 值，再被窗口整体压平。
+    这里直接把这个量纲错误也一并断言掉。
     """
-    x = _phantom()
-    n = np.clip(x + RNG.normal(0, 0.05, x.shape), 0, 1)
-    x8 = np.clip(np.rint(x * 255), 0, 255).astype(np.uint8)
-    n8 = np.clip(np.rint(n * 255), 0, 255).astype(np.uint8)
+    x = _windowed_phantom(128, 128)
+    # 噪声取 8e-3（≈33 HU）。**必须显著大于量化误差**，否则两路径的 dB 差
+    # 被量化本身撑大，测不出"尺度一致"。
+    # 量化误差的算术（实测印证过）：8 bit 步长 = 4096/255 = 16.06 HU，
+    # 均匀量化 RMS = 步长/√12 = 4.64 HU；**两幅图都量化**，故 √2 倍 = 6.56 HU。
+    #   噪声 16.4 HU 时：√(16.4² + 6.56²) = 17.7 HU → 与正确路径差 0.66 dB（超容差）
+    #   噪声 32.8 HU 时：√(32.8² + 6.56²) = 33.4 HU → 差约 0.16 dB（通过）
+    n = x + RNG.normal(0, 8e-3, x.shape)
+    lo, hi = (-160.0 + 1024.0) / 4096.0, (240.0 + 1024.0) / 4096.0
+    assert n.min() > lo and n.max() < hi, "噪声越出 HU 窗，clip 会污染本测试"
 
     p1, s1 = M.psnr(n, x), M.ssim(n, x)
+
+    # 正确的 8 bit 往返：量化后除回 [0,1]
+    x8 = np.clip(np.rint(x * 255), 0, 255).astype(np.uint8).astype(np.float64) / 255.0
+    n8 = np.clip(np.rint(n * 255), 0, 255).astype(np.uint8).astype(np.float64) / 255.0
     p2, s2 = M.psnr(n8, x8), M.ssim(n8, x8)
-    # uint8 路径存在量化误差，容差放宽
-    assert abs(p1 - p2) < 0.5, f"PSNR 尺度不一致: float={p1:.4f} uint8={p2:.4f}"
-    assert abs(s1 - s2) < 5e-3, f"SSIM 尺度不一致: float={s1:.4f} uint8={s2:.4f}"
-    print(f"  [6] float[0,1] / uint8 尺度一致性         OK  "
-          f"(PSNR {p1:.2f}/{p2:.2f}, SSIM {s1:.4f}/{s2:.4f})")
+    assert abs(p1 - p2) < 0.5, f"PSNR 量化不一致: float={p1:.4f} 8bit={p2:.4f}"
+    # SSIM 容差放宽到 2e-2：口径 A 的窗只有 400 HU，而 8 bit 一步就是 16 HU
+    # （4% 窗宽），量化扰动占附加误差约 20%，SSIM 因此比旧 [0,1] 版本敏感得多。
+    # 本测试的**主目的**是抓量纲错误（见下方 p_bad 断言），而非量化不变性。
+    assert abs(s1 - s2) < 2e-2, f"SSIM 量化不一致: float={s1:.4f} 8bit={s2:.4f}"
+
+    # 量纲错误必须**明显**偏离（正是本测试存在的意义）
+    p_bad = M.psnr(np.rint(n * 255), np.rint(x * 255))
+    assert abs(p_bad - p1) > 0.5, \
+        f"把 0–255 整数直接喂给归一化域指标竟与正确用法一致（{p_bad:.2f} vs {p1:.2f}）——量纲防护失效"
+    print(f"  [6] 量化往返一致性 + 量纲错误可检出      OK  "
+          f"(PSNR {p1:.2f}/{p2:.2f}，错误量纲 {p_bad:.2f})")
 
 
 def test_shapes():
@@ -141,15 +207,19 @@ def test_magnitude():
     PSNR 有解析式（-20·log10(σ)）可以严格校验，SSIM 没有，故只查趋势与宽松边界，
     避免把错误预期固化成测试。
     """
-    x = _phantom(256, 256)
+    x = _windowed_phantom(256, 256)
     prev = None
-    for sig in [0.01, 0.03, 0.05, 0.10]:
-        n = np.clip(x + RNG.normal(0, sig, x.shape), 0, 1)
+    # σ 上限受窗内余量约束：_windowed_phantom 两侧各留 0.28 窗宽 ≈ 0.0274，
+    # 故 3σ 必须 < 0.0274，即 σ < 9.1e-3。取到 0.008 已接近上限。
+    for sig in [0.001, 0.002, 0.004, 0.008]:
+        # 窗内图 + 窗内噪声：不能 clip 到 [0,1]，否则会人为削掉高斯尾
+        n = x + RNG.normal(0, sig, x.shape)
+        lo, hi = (-160.0 + 1024.0) / 4096.0, (240.0 + 1024.0) / 4096.0
+        assert n.min() > lo and n.max() < hi, f"σ={sig} 越出 HU 窗，clip 会让解析式失效"
         p, s = M.psnr(n, x), M.ssim(n, x)
 
-        # PSNR 可解析校验：误差近似 N(0, σ²) 时 PSNR ≈ -20·log10(σ)
-        # 截断会略微改变实际误差，故放宽到 1 dB
-        expect = -20.0 * np.log10(sig)
+        # 口径 A 的解析值：PSNR = 20·log10(400 / σ_HU)，σ_HU = σ · 4096
+        expect = 20.0 * np.log10(400.0 / (sig * 4096.0))
         assert abs(p - expect) < 1.0, f"σ={sig}: PSNR={p:.2f} 与解析值 {expect:.2f} 差过大"
 
         # SSIM：只查落在 (0, 1] 且随噪声增大而下降

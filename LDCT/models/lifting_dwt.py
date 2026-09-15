@@ -83,9 +83,14 @@ class _LiftingBank1D(nn.Module):
     实测（`tests/test_lifting_pr.py` 与专项诊断）：PR 在 float64 下无条件成立，
     但在 float32 下**条件数随参数幅度急剧恶化**——
 
-        |P|,|U| |max| ≈ 1.0  → 闭环 max|err| ≈ 2e-07
-        |P|,|U| |max| ≈ 3.5  → 闭环 max|err| ≈ 1e-04
-        |P|,|U| |max| ≈ 5.3  → 闭环 max|err| ≈ 1e+01（灾难级）
+        |P|,|U| |max| ≈ 1.0  → 闭环 rel_L2 ≈ 1.1e-07
+        |P|,|U| |max| ≈ 2.0  → 闭环 rel_L2 ≈ 9.9e-07
+        |P|,|U| |max| ≈ 3.5  → 闭环 rel_L2 ≈ 1.4e-03
+        |P|,|U| |max| ≈ 5.3  → 闭环 rel_L2 ≈ 2.8e-01（灾难级）
+
+    ⚠️ 2026-09-15 更正：本表早先的中间一行写「≈3.5 → max|err| ≈ 1e-04」——
+       **与实测差约两个数量级**（实测 max|err| = 2.269e-02）。上表改为直接引用
+       `tests/test_lifting_pr.py` 的【6】节实测输出（rel_L2 口径），可复算。
 
     同一组参数换 float64 复测，σ=3.0 时误差从 12.19 降到 6.3e-07，
     故这不是结构错误，而是浮点条件数问题。
