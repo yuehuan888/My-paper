@@ -89,8 +89,9 @@ committed() { stat -c%s "$SPAN" 2>/dev/null || echo 0; }
 progress() {
   local a b
   a=$(committed)
-  b=$(stat -c%s "$SPAN.part" 2>/dev/null || echo 0)
-  echo $((a + b))
+  # 临时分片现在带唯一后缀（$SPAN.part.<轮次>），故用 glob 汇总
+  b=$(du -cb "$SPAN".part.* 2>/dev/null | tail -1 | awk '{print $1}')
+  echo $((a + ${b:-0}))
 }
 
 if [ "${1:-run}" = "status" ]; then
@@ -174,15 +175,31 @@ while :; do
   from=$((SPAN_START+got))
   # 每轮重新打 Kaggle 端点拿新签名；显式指定 Range 起点（不能用 -C -，因为
   # 本地偏移需加上 SPAN_START 才是归档内偏移）
-  curl -sL --ssl-revoke-best-effort --max-time 900 \
-       --retry 2 --retry-delay 2 --retry-all-errors \
-       -r "${from}-${SPAN_END}" -o "$SPAN.part" "$URL" || true
+  # ⚠️ 超时必须短，这一点是实测调出来的，不是拍脑袋：
+  #    本机到 storage.googleapis.com 的连接**极不稳定** —— 同一命令连测三次，
+  #    一次 0 字节直接失败、一次 65 KB/s、一次 209 KB/s（另一次独立测试到 522 KB/s）。
+  #    失败的连接**是挂起而不是快速报错**，所以 --max-time 越大，单次失败浪费越多。
+  #    原先 900s：一次挂起就白等 15 分钟；3000 次重试上限下足以耗掉整晚。
+  #    现改为「快失败、快重试」：连接 20s、单次 90s，让重试次数去换吞吐。
+  #    每次失败只损失约 90s 而非 900s，且成功的那次照常追加。
+  # ⚠️ 每轮用**唯一**临时文件名，这是被一次真实数据损坏换来的教训：
+  #    原先复用固定的 "$SPAN.part"，而本机 Windows 会间歇性锁住该文件，
+  #    使 `rm -f` 报 "Device or resource busy" 而失败。于是：
+  #      旧 .part 残留 -> 本轮 curl 若也失败（未截断它）-> cat 把**上一轮的旧内容
+  #      又追加了一遍** -> span 重复累加。实测 span 涨到应有长度的 168%，数据报废。
+  #    用唯一名后，"本轮的 .part 只可能由本轮写入"，不存在陈旧内容被重追加的路径。
+  seg="$SPAN.part.$tries"
+  rm -f "$seg" 2>/dev/null || true
+  curl -sL --ssl-revoke-best-effort \
+       --connect-timeout 20 --max-time 90 \
+       --retry 1 --retry-delay 2 --retry-all-errors \
+       -r "${from}-${SPAN_END}" -o "$seg" "$URL" || true
 
-  psz=$(stat -c%s "$SPAN.part" 2>/dev/null || echo 0)
+  psz=$(stat -c%s "$seg" 2>/dev/null || echo 0)
   if [ "$psz" -gt 0 ] && [ "$psz" -le "$want" ]; then
-    cat "$SPAN.part" >> "$SPAN"      # 206 正常分片，追加
+    cat "$seg" >> "$SPAN"      # 206 正常分片，追加
   fi
-  rm -f "$SPAN.part"
+  rm -f "$seg" 2>/dev/null || true
 
   now=$(committed)
   if [ "$now" -le "$last" ]; then sleep 5; fi   # 无进展则退避
