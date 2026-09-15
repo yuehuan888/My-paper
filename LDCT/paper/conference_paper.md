@@ -46,35 +46,55 @@ question:
 
 > **Does making the wavelet learnable actually help?**
 
-Our answer, established through a controlled three-arm study, is: **not by
-itself.** An unconstrained learnable analysis–synthesis pair performs
-**statistically indistinguishably from a fixed Haar basis** (Section 5.2). The
-reason is not that adaptation is useless, but that **learning destroys the
-transform's own invertibility**: after training, the analysis–synthesis
-round-trip error reaches **12–16%** of the signal norm, so the network must spend
-capacity compensating for a loss it should not have to model.
+Recent invertible-wavelet denoisers [19], [20] build perfect reconstruction
+(PR) into their architectures. Whether that structure is *what makes learning
+pay* has never been tested: prior work **assumes** invertibility, so it cannot
+observe its absence. Our answer, from a controlled three-arm study that makes
+invertibility **optional** while holding capacity, split, schedule and evaluation
+fixed, is: **learning pays only if the transform is kept invertible by
+construction.**
 
-We then show that this is fixable *by construction*. Parameterizing the wavelet
-as a **lifting scheme** [23], [24] — in which the inverse is not a
-second set of parameters but the forward prediction/update filters applied in
-reverse — guarantees invertibility regardless of what the filters learn. With
-this constraint, **learning finally pays off**: +0.30 dB over unconstrained
-learning and +0.27 dB over fixed Haar, both highly significant.
+Parameterizing the wavelet as a **lifting scheme** [23], [24] — the inverse
+*reuses* the forward prediction/update filters rather than being a second set of
+parameters — makes learning pay off: **+0.30 dB over unconstrained learning and
++0.27 dB over fixed Haar**, at large effect size ($d_z \approx 4.7$), replicated
+on a second split and on SSIM.
+
+The inverted case is equally informative. An unconstrained learnable
+analysis–synthesis pair performs **statistically indistinguishably from a fixed
+Haar basis**. We are careful how we state this: the design resolves a 0.136 dB
+effect at $n=5$ seeds, whereas the unconstrained–fixed gap is 0.025 dB —
+**5.6× below that floor**. So we report a **bound**, not an absence: any genuine
+difference is smaller than **0.14 dB**, roughly half of what PR delivers. A weak
+experiment could not have resolved the effect that PR produces.
+
+**Why** it fails is the substance of the paper. After training, the unconstrained
+pair loses **12–16%** of the signal in a forward–backward pass, against
+**1.6e-07** for both invertible arms. We show this is **causal, not merely
+correlated**: holding architecture, capacity and protocol fixed, we inject a
+controlled round-trip error into the PR arm, and it degrades **monotonically** to
+the fixed-Haar level (8.7% error → 30.5500 dB, against 30.5591 dB for an arm that
+never learned anything; $p \le 0.001$ at every dose). Prior invertible-wavelet
+denoisers cannot observe this state, because their designs make it unreachable.
 
 **Contributions.**
-1. A **negative result**: an unconstrained learnable wavelet gives no benefit over
-   a fixed Haar basis for LDCT denoising.
-2. A **mechanism, established by intervention**: the failure is *caused* by loss
-   of invertibility. Injecting a controlled round-trip error of the same
-   magnitude into the **PR** arm degrades it to the fixed-Haar level — monotonically
-   and significantly (n = 5 seeds, p ≤ 0.007 at every dose). Prior
-   invertible-wavelet denoisers cannot observe this state, because their designs
-   make it unreachable.
-3. A **practical caveat**: the structural PR guarantee does not enforce itself in
-   floating point. Bounding the lifting taps is what makes it hold — without it
-   the round-trip error degrades from 3.6e-07 to 5.2e+00, which the invertible-
-   network literature does not report.
-4. A **2,159-parameter network** that approaches published baselines.
+1. **A missing control**, and the negative result it exposes: with capacity and
+   protocol held fixed, an unconstrained learnable wavelet gives no benefit over
+   fixed Haar — reported as a **bound of 0.14 dB**, not as an absence.
+2. **A causal mechanism**, established by intervention rather than correlation:
+   a round-trip error of the same magnitude is *sufficient* to destroy the
+   benefit, monotonically and significantly (n = 5 seeds, p ≤ 0.007 at every
+   dose). Prior invertible-wavelet denoisers cannot observe this state.
+3. **A conditioning requirement, not merely a reversibility one.** Structural PR
+   does not enforce itself in float32. We characterize this by a **controlled
+   sweep of tap magnitude**: holding the architecture fixed and scaling the
+   lifting taps from 1.0 to 5.3, the round-trip error grows from 3.6e-07 to
+   5.2e+00. Bounding the taps (our `bound = 0.5`) is what keeps the construction
+   usable, and the invertible-network literature does not report this failure
+   mode. *We note this is a controlled analysis of the parameter regime, not a
+   training-drift measurement.*
+4. **A 2,159-parameter network** that comes within 1.0 dB of a same-protocol
+   RED-CNN baseline at **857× fewer parameters**.
 
 ---
 
