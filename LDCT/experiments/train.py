@@ -250,7 +250,9 @@ def train(args):
                                   n_conv=args.n_conv,
                                   wavelet=args.wavelet,
                                   global_residual=args.global_residual,
-                                  synth_mismatch=args.synth_mismatch).to(device)
+                                  synth_mismatch=args.synth_mismatch,
+                                  n_taps=args.n_taps,
+                                  bound=args.bound).to(device)
     n_par = count_parameters(model)
     # 只有 PRWaveletDenoiser 提供参数构成与闭环诊断；RED-CNN 无此接口
     rep = (model.param_report() if hasattr(model, "param_report")
@@ -265,6 +267,9 @@ def train(args):
         "patch": args.patch, "learning_rate": args.learning_rate,
         "lr_milestones": None, "levels": args.levels,
         "mid_ch": args.mid_ch, "n_conv": args.n_conv,
+        # 提升格式旋钮。默认 3 / 0.5 = 全部已有结果所用的配置；
+        # 不记录的话 bound 扫描的结果无法区分是哪个 bound 跑出来的。
+        "n_taps": args.n_taps, "bound": args.bound,
         "wavelet": args.wavelet,
         "global_residual": args.global_residual,
         # 干预实验的注入强度。非 0 时本次运行是"被注入闭环误差的 PR 臂"，
@@ -494,6 +499,14 @@ def main():
     ap.add_argument("--patch", type=int, default=128)
     ap.add_argument("--learning-rate", type=float, default=1e-3)
     ap.add_argument("--levels", type=int, default=2)
+    # 提升格式的两个旋钮。默认值即全部已有结果所用的配置。
+    # 暴露它们的用途：贡献 3（"结构 PR 在 float32 下不自动成立，必须界定 taps"）
+    # 此前只有一个观测点（无界 → 5.2e+00），无法画剂量-响应曲线。
+    ap.add_argument("--n-taps", type=int, default=3,
+                    help="提升滤波器 P/U 的抽头数，必须为奇数（默认 3）")
+    ap.add_argument("--bound", type=float, default=0.5,
+                    help="taps 相对 Haar 初始值的最大偏离，即 |taps| <= init + bound"
+                         "（默认 0.5）。调大即模拟无界化，用于验证数值稳定性边界。")
     ap.add_argument("--mid-ch", type=int, default=16)
     ap.add_argument("--n-conv", type=int, default=2)
     ap.add_argument("--model", default="pr_wavelet",

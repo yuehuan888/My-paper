@@ -12,15 +12,19 @@ Making the wavelet transform learnable is a natural extension of wavelet-domain
 image denoising. We show that for low-dose CT, this extension **fails by default**:
 an unconstrained learnable analysis–synthesis pair drifts away from invertibility
 during training, and the resulting network performs **no better than a fixed Haar
-basis** (−0.03 dB, p = 0.11, 95% CI straddling zero). We trace this to the
-transform's reconstruction error, which reaches **12–15%** after training. We
-show this is **causal, not merely correlated**: injecting a controlled error of
-the same magnitude into the perfect-reconstruction arm degrades it to the
-fixed-Haar level. Imposing
+basis**. Our design resolves a **0.136 dB** effect at $n=5$ seeds, and the
+unconstrained–fixed gap is **0.025 dB — 5.6× below that floor** — so we state the
+result as a bound rather than an absence: any real difference is smaller than
+**0.14 dB**, roughly **half** the benefit that perfect reconstruction later
+delivers. We trace the failure to the transform's reconstruction error, which
+reaches **12–16%** after training. We show this is **causal, not merely
+correlated**: injecting a controlled error of the same magnitude into the
+perfect-reconstruction arm degrades it to the fixed-Haar level. Imposing
 perfect reconstruction *by construction* — parameterizing the wavelet as a lifting
 scheme whose inverse shares the forward filters — makes learning pay off:
-**+0.30 dB over unconstrained learning (p = 0.0005) and +0.27 dB over fixed Haar
-(p = 0.0004)**, consistent across two data splits. The resulting network has
+**+0.30 dB over unconstrained learning (p = 0.0005, $d_z$ = 4.67) and +0.27 dB over
+fixed Haar (p = 0.0004, $d_z$ = 4.78)** — large effects, not marginal ones,
+consistent across two data splits. The resulting network has
 **2,159 parameters** and reaches **31.97 dB** on AAPM-Mayo 2016, within 1.0 dB of
 a RED-CNN baseline trained under the identical protocol at **857× fewer
 parameters**.
@@ -47,7 +51,7 @@ itself.** An unconstrained learnable analysis–synthesis pair performs
 **statistically indistinguishably from a fixed Haar basis** (Section 5.2). The
 reason is not that adaptation is useless, but that **learning destroys the
 transform's own invertibility**: after training, the analysis–synthesis
-round-trip error reaches **12–15%** of the signal norm, so the network must spend
+round-trip error reaches **12–16%** of the signal norm, so the network must spend
 capacity compensating for a loss it should not have to model.
 
 We then show that this is fixable *by construction*. Parameterizing the wavelet
@@ -251,10 +255,10 @@ any effect we report, so **all results are reported per patient**.
 | Split | Method | Params | PSNR | SSIM |
 |---|---|---|---|---|
 | S1 | identity | — | 27.8630 | 0.8361 |
-| S1 | **PR-LWT (ours)** | **2,159** | **30.8314 ± 0.0815** | — |
+| S1 | **PR-LWT (ours)** | **2,159** | **30.8314 ± 0.0815** | **0.8762 ± 0.0011** |
 | S1 | RED-CNN [1] (ours, same split) | 1,848,865 | 31.8310 | 0.8824 |
 | S2 | identity (L506) | — | 29.2489 | 0.8759 |
-| S2 | **PR-LWT (ours)** | **2,159** | **31.9731 ± 0.0787** | — |
+| S2 | **PR-LWT (ours)** | **2,159** | **31.9731 ± 0.0787** | **0.9041 ± 0.0008** |
 | S2 | RED-CNN [1] (ours, same split) | 1,848,865 | **32.9471** | **0.9090** |
 | S2 | RED-CNN [1] (as published) | ~10⁶ | ≈ 32.93 | — |
 | S2 | CTformer [4] (as published) | ~1.4×10⁶ | ≈ 32.9 | — |
@@ -304,14 +308,60 @@ the independent unit):
 
 **Paired comparisons:**
 
-| Split | Comparison | Δ (dB) | t | p | 95% CI |
-|---|---|---|---|---|---|
-| S1 | `pr` − `unconstrained` | **+0.2973** | 10.44 | **0.0005** | [+0.218, +0.376] |
-| S1 | `pr` − `fixed` | **+0.2723** | 10.68 | **0.0004** | [+0.202, +0.343] |
-| S1 | `unconstrained` − `fixed` | −0.0251 | −2.02 | 0.113 | [−0.060, **+0.009**] |
-| S2 | `pr` − `unconstrained` | **+0.2942** | 7.92 | **0.016** | [+0.134, +0.454] |
-| S2 | `pr` − `fixed` | **+0.2794** | 10.95 | **0.008** | [+0.170, +0.389] |
-| S2 | `unconstrained` − `fixed` | −0.0148 | −1.25 | 0.337 | [−0.066, **+0.036**] |
+| Split | Comparison | Δ (dB) | t | p | 95% CI | Cohen's $d_z$ | $\lvert\Delta\rvert$ / MDES |
+|---|---|---|---|---|---|---|---|
+| S1 | `pr` − `unconstrained` | **+0.2973** | 10.44 | **0.0005** | [+0.218, +0.376] | **+4.67** | **2.19×** |
+| S1 | `pr` − `fixed` | **+0.2723** | 10.68 | **0.0004** | [+0.202, +0.343] | **+4.78** | **2.01×** |
+| S1 | `unconstrained` − `fixed` | −0.0251 | −2.02 | 0.113 | [−0.060, **+0.009**] | −0.90 | 0.18× |
+| S2 | `pr` − `unconstrained` | **+0.2942** | 7.92 | **0.016** | [+0.134, +0.454] | **+4.57** | 1.21× |
+| S2 | `pr` − `fixed` | **+0.2794** | 10.95 | **0.008** | [+0.170, +0.389] | **+6.32** | 1.15× |
+| S2 | `unconstrained` − `fixed` | −0.0148 | −1.25 | 0.337 | [−0.066, **+0.036**] | −0.72 | 0.06× |
+
+**Effect sizes are large, not marginal.** The two significant comparisons carry
+$d_z$ = +4.67 and +4.78 (S1), well beyond the conventional "large" threshold of
+0.8. The claim is therefore not that PR-LWT buys a small improvement, but that it
+moves the network by a large, consistent margin relative to seed-to-seed
+variation.
+
+**SSIM reproduces the same ordering.** The three-arm pattern is not a
+PSNR artefact. On SSIM, `pr` reaches **0.8762 ± 0.0011** (S1) / **0.9041 ±
+0.0008** (S2), against 0.8725 / 0.8729 (S1) for the other two arms: `pr` −
+`unconstrained` = **+0.0037** ($p$ = 0.0008, $d_z$ = +4.07) and `pr` − `fixed` =
+**+0.0033** ($p$ = 0.0016, $d_z$ = +3.40), with the same direction on S2
+(+0.0029 both, $p$ = 0.030 / 0.015).
+
+One honest wrinkle: on SSIM the `unconstrained` − `fixed` gap is *marginally*
+significant in the **negative** direction on S1 (−0.0004, $p$ = 0.039), whereas
+on PSNR it was not ($p$ = 0.113); on S2 it is exactly zero (+0.0000,
+$p$ = 0.985). Unconstrained learning is therefore never *better* — on one split
+it is detectably *worse* — but we do not read a stable effect into a
+$4\times10^{-4}$ SSIM difference that vanishes on the other split.
+
+> **Comparability note.** SSIM is computed with our own implementation
+> (`gaussian_weights=True`, $\sigma$ = 1.5, win size 11, `data_range` = 400),
+> which is used identically for every arm and for our RED-CNN reproduction, so
+> all comparisons **within** this paper are like-for-like. Its agreement with
+> the SSIM of the reference RED-CNN/CTformer code was **not** independently
+> verified, so we do not compare our SSIM against *published* SSIM values. The
+> PSNR protocol, by contrast, was verified against an independent measurement
+> (§5.1).
+
+**What this experiment can and cannot detect (Fig. 5).** Because the null result
+carries much of the argument, we quantify the design's resolution directly. For a
+paired *t*-test at 80% power, the minimum detectable effect (MDES) at $n=5$ is
+**0.136 dB** (S1); at $n=3$ it is 0.244 dB (S2) — these are the $\lvert\Delta\rvert$/MDES
+denominators above. Two consequences follow:
+
+- The **PR benefit is detectable**: +0.272 dB is **2.0×** the S1 detection floor.
+- The **null gap is not**: the 0.025 dB `unconstrained` − `fixed` gap sits at
+  **0.18×** the floor, i.e. **5.6× below** what $n=5$ can resolve.
+
+This sharpens the claim beyond "we could not distinguish them". The correct
+statement is a **bound**: any genuine difference between unconstrained learning and
+fixed Haar is *smaller than 0.14 dB*, whereas the benefit that PR delivers is
+0.27–0.30 dB — roughly **twice the entire resolution of the experiment**. The
+negative result is thus not an artefact of a blind experiment; the experiment was
+sharp enough to see the effect PR produces, and saw nothing in its absence.
 
 **Three findings, identical on both splits:**
 
@@ -348,22 +398,29 @@ makes learnability pay.**
 
 ### 5.3 Mechanism: what unconstrained learning actually does
 
-We measure the analysis–synthesis round-trip error of the **trained** transforms,
-on the final checkpoint of every seed
-(`experiments/verify_roundtrip.py --checkpoints`). Panel (a) of Fig. 2 shows
-these; panel (b) shows the intervention described below.
+We measure the analysis–synthesis round-trip error of the **trained** transforms
+on their final checkpoints (`experiments/verify_roundtrip.py --checkpoints`),
+over all seeds whose checkpoints were retained (S1: $n=1$; S2: $n=3$).
+Panel (a) of Fig. 2 shows these; panel (b) shows the intervention described
+below.
 
-| Arm | Wavelet params | Round-trip error (rel. L2), S1 | S2 |
+| Arm | Wavelet params | Round-trip error (rel. L2), S1 ($n$=1) | S2 ($n$=3) |
 |---|---|---|---|
 | `pr` | 24 | **1.62e-07** | **1.65e-07** |
 | `fixed` | 0 | 1.64e-07 | 1.64e-07 |
-| `unconstrained` | 64 | **1.25e-01** | **1.45e-01** |
+| `unconstrained` | 64 | **1.49e-01** | **1.45e-01** |
 
-Unconstrained learning drives the transform to a state where **12–15% of the
-signal is lost in a forward–backward pass** (S1 per-seed range 0.11–0.15),
-against **1.6e-07** — the float32 limit — for the two invertible arms: a gap of
-**six orders of magnitude**. The network must then denoise *and* compensate for
-its own transform.
+> **A note on $n$.** The S1 figure rests on a single retained checkpoint, not a
+> five-seed mean; only S2 has $n=3$ (per-seed 0.119 / 0.152 / 0.164). We report
+> the S1 value as the single measurement it is. Recovering a true S1 five-seed
+> mean requires re-training that arm, since checkpoints from the original run
+> were not retained (see §6).
+
+Unconstrained learning drives the transform to a state where **12–16% of the
+signal is lost in a forward–backward pass** (S1 14.9%; S2 mean 14.5%,
+per-seed 11.9–16.4%), against **1.6e-07** — the float32 limit — for the two
+invertible arms: a gap of **six orders of magnitude**. The network must then
+denoise *and* compensate for its own transform.
 
 **The comparison above is correlational.** The unconstrained arm both loses
 invertibility *and* performs like fixed Haar; that alone does not show the former
@@ -411,16 +468,32 @@ error the network must model, which is what allows adaptation to help.
 **Limitations.**
 1. **Single dataset** (AAPM-Mayo). Generalisation to other CT data is untested.
 2. **Small test cohort** (2 patients in S1, 1 in S2). This is why we report
-   per-patient results and use seeds as the unit of analysis.
-3. **Same-split baselines cover RED-CNN only.** RED-CNN was retrained by us under
-   our own splits and protocol (§5.1); CTformer and the remaining methods are
-   still quoted from the literature, and the training-set differences noted there
-   apply to them. Retraining further baselines was out of scope here.
-4. **The injected defect is structurally simpler than the real one.** We perturb
+   per-patient results and use seeds as the unit of analysis. For scale, the
+   *patient-to-patient* identity-floor spread is **3.75 dB** (§4.4) — an order of
+   magnitude larger than any effect reported here — which is precisely why the
+   seed, not the slice, is the unit of analysis.
+3. **The 30-epoch budget truncates before convergence.** On nearly every run the
+   best validation epoch equals the final epoch (30/30), so all three arms are
+   compared at a *fixed budget* rather than at their optima. The comparison is
+   fair — every arm receives the identical budget — but it is a comparison of
+   learning *trajectories*, not of converged solutions. Longer schedules could
+   compress or widen the gap; this is untested here.
+4. **Same-split baselines cover RED-CNN only, at a single seed.** RED-CNN was
+   retrained by us under our own splits and protocol (§5.1), but with $n=1$ seed
+   versus $n=5$/$n=3$ for the three arms, so no seed-level paired test is
+   possible for it and we report no interval. CTformer and the remaining methods
+   are still quoted from the literature, and the training-set differences noted
+   there apply to them. Retraining further baselines was out of scope.
+5. **The injected defect is structurally simpler than the real one.** We perturb
    the synthesis filter only, whereas the unconstrained arm's two filter banks
    drift apart independently. The intervention establishes sufficiency at
    matched magnitude (§5.3), not exact reproduction of that arm's error.
-5. **No downstream task** (e.g. segmentation) is evaluated.
+6. **The PR arm's seed-to-seed spread is numerically larger** (SD 0.0815 vs.
+   0.0305 and 0.0256 dB), though a Levene test does not confirm
+   heteroscedasticity at $n=5$ ($p$ = 0.167 S1, 0.630 S2). We flag it rather than
+   claim it: if real, it would mean PR-LWT's advantage carries a modestly higher
+   training-variance cost. More seeds are needed to settle this.
+7. **No downstream task** (e.g. segmentation) is evaluated.
 
 ---
 
@@ -583,6 +656,37 @@ dataset," *Med. Phys.*, vol. 48, no. 2, pp. 902–911, 2021.
 [33] J. Leuschner, M. Schmidt, D. O. Baguer, and P. Maass, "LoDoPaB-CT, a
 benchmark dataset for low-dose computed tomography reconstruction," *Sci.
 Data*, vol. 8, p. 109, 2021.
+
+---
+
+## 附录 B：图（`experiments/make_figures_ext.py` 产出）
+
+> 全部图使用**经校验器实测通过**的色盲友好配色（`#2E5EAA` / `#D1495B` / `#7B52AB`，
+> 相邻对 protan ΔE 14.3、常视觉 ΔE 20.0，全部检查项 PASS）。
+
+**图 5 — 逐切片分布与方差分解**（`fig5_slice_dist.png`）
+(a) 435 张测试切片上每种子的 PSNR 分布（半小提琴 + 抖动散点，黑线为四分位与中位数）。
+三臂的分布**几乎完全重叠**，说明效应不是被少数切片带出来的。
+(b) 方差分解：**逐切片** SD（1.75–1.80 dB）比**种子间** SD（0.030–0.087 dB）
+大 **20–60 倍** —— 这是"以种子而非切片为分析单元"的直接依据。
+
+**图 6 — 收敛动力学**（`fig6_convergence.png`）
+(a) 训练 L1、(b) 验证 PSNR，各三臂 5 种子均值 ± 1 SD。
+PR-LWT 在**两个**指标上都优于另两臂（末轮 train L1 0.003346 vs 0.003396/0.003414）。
+(b) 中虚线标出**所有种子最优轮次均为第 30 轮**——即训练尚未收敛（见 §6 局限 3）。
+
+**图 7 — 效应量森林图**（`fig7_forest.png`）
+六个配对比较的 Δ 与 95% CI。灰带为该 $n$ 下的 MDES 区间（"这个样本量测不出来的范围"）。
+两个零结果**完全落在灰带内**，而两个显著结果的 CI 整体在灰带之外。
+
+**图 8 — 功效曲线**（`fig8_power.png`）
+MDES 随种子数 $n$ 的变化。虚线为实测效应：PR 的收益（+0.272 dB）在 $n=5$ 的
+检出线（0.136 dB）**之上**，而 unconstrained–fixed 的差距（0.025 dB）在其**之下 5.6 倍**。
+
+**图 9 — 逐患者一致性**（`fig9_perpatient.png`）
+(a) L506（n=211）与 L067（n=224）上效应方向一致；
+(b) 两患者的 identity 地板相差 **2.69 dB**，大于本文报告的任何效应 —— 逐患者报告与
+以种子为单位的必要性再次可见。
 
 ---
 

@@ -93,13 +93,27 @@ class PRWaveletDenoiser(nn.Module):
 
     def __init__(self, levels: int = 2, mid_ch: int = 16, n_conv: int = 2,
                  wavelet: str = "pr", global_residual: bool = False,
-                 synth_mismatch: float = 0.0):
+                 synth_mismatch: float = 0.0, n_taps: int = 3, bound: float = 0.5):
         super().__init__()
         if wavelet not in ("pr", "fixed", "unconstrained"):
             raise ValueError(f"未知 wavelet={wavelet!r}")
         self.levels = levels
         self.wavelet_kind = wavelet
         self.global_residual = global_residual
+        # ---- 提升格式的两个旋钮（**贡献 3 的消融用**）----------------------
+        # n_taps: 每个 P/U 滤波器的抽头数（默认 3，与全部已有结果一致）
+        # bound : taps 相对 Haar 初始值的最大偏离（|taps| ≤ init + bound）
+        #
+        # ⚠️ 二者默认值 = 现有行为，改动对已有结果**零影响**。
+        #    bound 是论文贡献 3 的核心：无界化会让 float32 闭环从 3.6e-07
+        #    退化到 5.2e+00。此前该结论只有**单个观测点**，无法画曲线；
+        #    暴露此参数后才能做 bound 扫描，把"需要界定"从断言变成剂量-响应。
+        self.n_taps = int(n_taps)
+        self.bound = float(bound)
+        if n_taps % 2 == 0:
+            raise ValueError(f"n_taps 必须为奇数（零填充需要中心抽头），得到 {n_taps}")
+        if bound < 0:
+            raise ValueError(f"bound 必须非负，得到 {bound}")
         # 受控闭环误差注入：>0 时，PR 臂的**合成**用 (1−ε)·U 而非 U。
         # 用于干预实验——检验"闭环误差本身是否导致性能退化"。
         # 默认 0.0，对已有结果零影响。
@@ -113,8 +127,9 @@ class PRWaveletDenoiser(nn.Module):
             self.idwt = MultiLevelIDWT(learnable=True)
             self.wavelet = None
         else:
-            self.wavelet = MultiLevelLifting(levels=levels, n_taps=3,
+            self.wavelet = MultiLevelLifting(levels=levels, n_taps=self.n_taps,
                                              learnable=(wavelet == "pr"),
+                                             bound=self.bound,
                                              synth_mismatch=synth_mismatch)
             self.dwt = self.idwt = None
         self.heads = nn.ModuleDict({b: BandHead(mid_ch, n_conv) for b in self.BANDS})

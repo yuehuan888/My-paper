@@ -44,8 +44,16 @@ sys.path.insert(0, HERE)
 
 from models.denoiser import PRWaveletDenoiser     # noqa: E402
 
-TARGET = 1.253e-01          # 无约束臂 S1 五种子均值（论文 §5.3）
-TARGET_LO, TARGET_HI = 0.11, 0.15   # S1 逐种子范围
+# ⚠️ 2026-09-15 勘误：此前这里写 TARGET = 1.253e-01 并注释「无约束臂 S1 五种子
+#    均值（论文 §5.3）」——那是一个**循环出处**：论文 §5.3 的 1.25e-01 在仓库里
+#    查无产物，唯一的 S1 实测是 roundtrip_checkpoints_w3.json 的 **n=1、0.1492**。
+#    （S2 才是真的 n=3，均值 0.1451。）
+#    现改用**有出处**的实测值。注意：这会改变 ε 网格与目标的对应关系——
+#    ε=0.222 一档的实测闭环是 8.7%，与 S1 的 14.9% 仍同量级，故机制的
+#    "同量级充分性"论证方向不变，但论文里 ε 与目标的对应表述需同步复核。
+TARGET = 1.4916e-01         # 实测：roundtrip_checkpoints_w3.json, n=1
+TARGET_LO, TARGET_HI = 0.119, 0.164  # 实测：S2 的 n=3 逐种子范围
+
 
 
 def probe(model, size=256, seed=7):

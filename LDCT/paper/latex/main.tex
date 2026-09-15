@@ -49,15 +49,20 @@ Making the wavelet transform learnable is a natural extension of wavelet-domain
 image denoising. We show that for low-dose CT, this extension \textbf{fails by
 default}: an unconstrained learnable analysis--synthesis pair drifts away from
 invertibility during training, and the resulting network performs \textbf{no
-better than a fixed Haar basis} ($-0.03$~dB, $p=0.11$, 95\% CI straddling zero).
-We trace this to the transform's reconstruction error, which reaches
-\textbf{12--15\%} after training, and show it is \textbf{causal rather than
+better than a fixed Haar basis}. Our design resolves a \textbf{0.136~dB} effect
+at $n=5$ seeds, and the unconstrained--fixed gap is \textbf{0.025~dB ---
+5.6$\times$ below that floor} --- so we state the result as a \emph{bound} rather
+than an absence: any real difference is smaller than \textbf{0.14~dB}, roughly
+\emph{half} the benefit that perfect reconstruction later delivers. We trace the
+failure to the transform's reconstruction error, which reaches
+\textbf{12--16\%} after training, and show it is \textbf{causal rather than
 merely correlated}: injecting a controlled error of the same magnitude into the
 perfect-reconstruction arm degrades it to the fixed-Haar level. Imposing perfect
 reconstruction \emph{by construction} --- parameterizing the wavelet as a lifting scheme whose inverse
 shares the forward filters --- makes learning pay off: \textbf{+0.30~dB over
-unconstrained learning ($p=0.0005$) and +0.27~dB over fixed Haar ($p=0.0004$)}%
-, consistent across two data splits. The resulting network has \textbf{2,159
+unconstrained learning ($p=0.0005$, $d_z=4.67$) and +0.27~dB over fixed Haar
+($p=0.0004$, $d_z=4.78$)} --- large effects, not marginal ones --- consistent
+across two data splits. The resulting network has \textbf{2,159
 parameters} and reaches \textbf{31.97~dB} on AAPM-Mayo 2016, within 1.0~dB of a
 RED-CNN baseline trained under the identical protocol at \textbf{857$\times$
 fewer parameters}.
@@ -93,7 +98,7 @@ itself.} An unconstrained learnable analysis--synthesis pair performs
 \textbf{statistically indistinguishably from a fixed Haar basis}
 (Section~\ref{sec:ablation}). The reason is not that adaptation is useless, but
 that \textbf{learning destroys the transform's own invertibility}: after
-training, the analysis--synthesis round-trip error reaches \textbf{12--15\%} of
+training, the analysis--synthesis round-trip error reaches \textbf{12--16\%} of
 the signal norm, so the network must spend capacity compensating for a loss it
 should not have to model.
 
@@ -354,11 +359,11 @@ reproduce the reference result rather than merely resembling it.}
 Split & Method & Params & PSNR & SSIM\\
 \midrule
 S1 & identity & --- & 27.8630 & 0.8361\\
-S1 & \textbf{PR-LWT (ours)} & \textbf{2,159} & \textbf{30.8314 $\pm$ 0.0815} & ---\\
+S1 & \textbf{PR-LWT (ours)} & \textbf{2,159} & \textbf{30.8314 $\pm$ 0.0815} & \textbf{0.8762 $\pm$ 0.0011}\\
 S1 & RED-CNN~\cite{chen2017redcnn} (ours, same split) & 1,848,865 & 31.8310 & 0.8824\\
 \midrule
 S2 & identity (L506) & --- & 29.2489 & 0.8759\\
-S2 & \textbf{PR-LWT (ours)} & \textbf{2,159} & \textbf{31.9731 $\pm$ 0.0787} & ---\\
+S2 & \textbf{PR-LWT (ours)} & \textbf{2,159} & \textbf{31.9731 $\pm$ 0.0787} & \textbf{0.9041 $\pm$ 0.0008}\\
 S2 & RED-CNN~\cite{chen2017redcnn} (ours, same split) & 1,848,865 & \textbf{32.9471} & \textbf{0.9090}\\
 \midrule
 S2 & RED-CNN~\cite{chen2017redcnn} (as published) & $\sim\!10^6$ & $\approx$32.93 & ---\\
@@ -440,17 +445,17 @@ only 2 / 1 patients, and adjacent slices are highly correlated. Treating slices
 as independent would inflate significance by orders of magnitude.}
 \label{tab:paired}
 \small
-\begin{tabular}{@{}llrrrr@{}}
+\begin{tabular}{@{}llrrrrrr@{}}
 \toprule
-Split & Comparison & $\Delta$ (dB) & $t$ & $p$ & 95\% CI\\
+Split & Comparison & $\Delta$ (dB) & $t$ & $p$ & 95\% CI & $d_z$ & $|\Delta|$/MDES\\
 \midrule
-S1 & \texttt{pr} $-$ \texttt{unconstrained} & \textbf{+0.2973} & 10.44 & \textbf{0.0005} & [+0.218, +0.376]\\
-S1 & \texttt{pr} $-$ \texttt{fixed} & \textbf{+0.2723} & 10.68 & \textbf{0.0004} & [+0.202, +0.343]\\
-S1 & \texttt{unconstrained} $-$ \texttt{fixed} & $-0.0251$ & $-2.02$ & 0.113 & [$-0.060$, \textbf{+0.009}]\\
+S1 & \texttt{pr} $-$ \texttt{unconstrained} & \textbf{+0.2973} & 10.44 & \textbf{0.0005} & [+0.218, +0.376] & \textbf{+4.67} & \textbf{2.19}$\times$\\
+S1 & \texttt{pr} $-$ \texttt{fixed} & \textbf{+0.2723} & 10.68 & \textbf{0.0004} & [+0.202, +0.343] & \textbf{+4.78} & \textbf{2.01}$\times$\\
+S1 & \texttt{unconstrained} $-$ \texttt{fixed} & $-0.0251$ & $-2.02$ & 0.113 & [$-0.060$, \textbf{+0.009}] & $-0.90$ & 0.18$\times$\\
 \midrule
-S2 & \texttt{pr} $-$ \texttt{unconstrained} & \textbf{+0.2942} & 7.92 & \textbf{0.016} & [+0.134, +0.454]\\
-S2 & \texttt{pr} $-$ \texttt{fixed} & \textbf{+0.2794} & 10.95 & \textbf{0.008} & [+0.170, +0.389]\\
-S2 & \texttt{unconstrained} $-$ \texttt{fixed} & $-0.0148$ & $-1.25$ & 0.337 & [$-0.066$, \textbf{+0.036}]\\
+S2 & \texttt{pr} $-$ \texttt{unconstrained} & \textbf{+0.2942} & 7.92 & \textbf{0.016} & [+0.134, +0.454] & \textbf{+4.57} & 1.21$\times$\\
+S2 & \texttt{pr} $-$ \texttt{fixed} & \textbf{+0.2794} & 10.95 & \textbf{0.008} & [+0.170, +0.389] & \textbf{+6.32} & 1.15$\times$\\
+S2 & \texttt{unconstrained} $-$ \texttt{fixed} & $-0.0148$ & $-1.25$ & 0.337 & [$-0.066$, \textbf{+0.036}] & $-0.72$ & 0.06$\times$\\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -465,9 +470,56 @@ S2 & \texttt{unconstrained} $-$ \texttt{fixed} & $-0.0148$ & $-1.25$ & 0.337 & [
 ($p=0.11$ / $0.34$; the CI straddles zero on both splits).
 \end{enumerate}
 
-Finding~3 is the key one. It is not an artefact of low statistical power,
-because \textbf{the same experiment resolves a +0.27~dB difference at
-$p<0.001$}. Unconstrained learning genuinely buys nothing.
+\textbf{Effect sizes are large, not marginal.} The two significant comparisons
+carry $d_z = +4.67$ and $+4.78$ (S1), far beyond the conventional ``large''
+threshold of $0.8$. The claim is not that PR-LWT buys a small gain, but that it
+moves the network by a large, consistent margin relative to seed-to-seed
+variation.
+
+\textbf{SSIM reproduces the same ordering.} The three-arm pattern is not a PSNR
+artefact. On SSIM, \texttt{pr} reaches \textbf{0.8762 $\pm$ 0.0011} (S1) /
+\textbf{0.9041 $\pm$ 0.0008} (S2), against 0.8725 / 0.8729 (S1) for the other two
+arms: \texttt{pr} $-$ \texttt{unconstrained} $= \textbf{+0.0037}$
+($p = 0.0008$, $d_z = +4.07$) and \texttt{pr} $-$ \texttt{fixed} $= \textbf{+0.0033}$
+($p = 0.0016$, $d_z = +3.40$), with the same direction on S2 ($+0.0029$ both,
+$p = 0.030$ / $0.015$).
+
+One honest wrinkle: on SSIM the \texttt{unconstrained} $-$ \texttt{fixed} gap is
+\emph{marginally} significant in the \textbf{negative} direction on S1
+($-0.0004$, $p = 0.039$), whereas on PSNR it was not ($p = 0.113$); on S2 it is
+exactly zero ($+0.0000$, $p = 0.985$). Unconstrained learning is therefore never
+\emph{better} --- on one split it is detectably \emph{worse} --- but we do not
+read a stable effect into a $4\times10^{-4}$ SSIM difference that vanishes on the
+other split.
+
+\begin{quote}
+\small\textbf{Comparability note.} SSIM is computed with our own implementation
+(\texttt{gaussian\_weights=True}, $\sigma = 1.5$, window 11,
+\texttt{data\_range} $= 400$), used identically for every arm and for our RED-CNN
+reproduction, so all comparisons \emph{within} this paper are like-for-like. Its
+agreement with the SSIM of the reference RED-CNN/CTformer code was \textbf{not}
+independently verified, so we do not compare our SSIM against \emph{published}
+SSIM values. The PSNR protocol, by contrast, was verified against an independent
+measurement (Section~\ref{sec:main-res}).
+\end{quote}
+
+\textbf{What this experiment can and cannot detect (Fig.~\ref{fig:power}).}
+Because the null result carries much of the argument, we quantify the design's
+resolution directly. For a paired $t$-test at 80\% power, the minimum detectable
+effect (MDES) at $n=5$ is \textbf{0.136~dB} (S1); at $n=3$ it is 0.244~dB (S2)
+--- the $|\Delta|$/MDES denominators in Table~\ref{tab:paired}. Two consequences
+follow. The \textbf{PR benefit is detectable}: $+0.272$~dB is $2.0\times$ the S1
+detection floor. The \textbf{null gap is not}: the $0.025$~dB
+\texttt{unconstrained}$-$\texttt{fixed} gap sits at $0.18\times$ that floor,
+i.e.\ $5.6\times$ \emph{below} what $n=5$ can resolve.
+
+This sharpens Finding~3 beyond ``we could not distinguish them''. The correct
+statement is a \textbf{bound}: any genuine difference between unconstrained
+learning and fixed Haar is \emph{smaller than 0.14~dB}, whereas the benefit PR
+delivers is $0.27$--$0.30$~dB --- roughly \textbf{twice the entire resolution of
+the experiment}. The negative result is therefore not an artefact of a blind
+experiment; the experiment was sharp enough to see the effect PR produces, and
+saw nothing in its absence.
 
 \textbf{Relation to WINNet's splitting-operator ablation.}
 WINNet~\cite{huang2022winnet} reports the opposite conclusion for a superficially
@@ -488,31 +540,33 @@ learnability pay.}
 \label{sec:mech}
 
 We measure the analysis--synthesis round-trip error of the \textbf{trained}
-transforms, on the final checkpoint of every seed (Table~\ref{tab:rt}, and
-Fig.~\ref{fig:mech}a).
+transforms on their final checkpoints (Table~\ref{tab:rt}, and
+Fig.~\ref{fig:mech}a), over all seeds whose checkpoints were retained
+(S1: $n=1$; S2: $n=3$).
 
 \begin{table}[t]
 \centering
-\caption{Round-trip error (relative $L_2$) of the trained transforms, measured
-on the final checkpoint of every seed.}
+\caption{Round-trip error (relative $L_2$) of the trained transforms, on the
+final retained checkpoint of each arm. S1 rests on $n=1$ checkpoint, S2 on
+$n=3$; this is a property of what was retained, not of the measurement.}
 \label{tab:rt}
 \small
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-Arm & Wavelet params & S1 & S2\\
+Arm & Wavelet params & S1 ($n$=1) & S2 ($n$=3)\\
 \midrule
 \texttt{pr} & 24 & \textbf{1.62e-07} & \textbf{1.65e-07}\\
 \texttt{fixed} & 0 & 1.64e-07 & 1.64e-07\\
-\texttt{unconstrained} & 64 & \textbf{1.25e-01} & \textbf{1.45e-01}\\
+\texttt{unconstrained} & 64 & \textbf{1.49e-01} & \textbf{1.45e-01}\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Unconstrained learning drives the transform to a state where \textbf{12--15\% of
-the signal is lost in a forward--backward pass} (S1 per-seed range 0.11--0.15),
-against $1.6\times10^{-7}$ --- the float32 limit --- for the two invertible arms:
-a gap of \textbf{six orders of magnitude}. The network must then denoise
-\emph{and} compensate for its own transform.
+Unconstrained learning drives the transform to a state where \textbf{12--16\% of
+the signal is lost in a forward--backward pass} (S1 14.9\%; S2 mean 14.5\%,
+per-seed 11.9--16.4\%), against $1.6\times10^{-7}$ --- the float32 limit --- for
+the two invertible arms: a gap of \textbf{six orders of magnitude}. The network
+must then denoise \emph{and} compensate for its own transform.
 
 \textbf{The comparison above is correlational.} The unconstrained arm both loses
 invertibility \emph{and} performs like fixed Haar; that alone does not show the
@@ -580,6 +634,18 @@ wavelet pay off. Dashed line is the identity floor on the S1 test set.}
 \label{fig:arms}
 \end{figure}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig8_power.png}
+\caption{What this experiment can and cannot detect. Minimum detectable effect
+(80\% power, paired $t$-test) as a function of the number of training seeds.
+The observed PR benefit ($+0.272$~dB) lies \emph{above} the $n=5$ detection
+floor ($0.136$~dB), while the observed null gap ($0.025$~dB) lies
+$5.6\times$ \emph{below} it --- so the negative result is a bound, not a blind
+spot.}
+\label{fig:power}
+\end{figure}
+
 % ============================================================================
 \section{Discussion and Limitations}
 % ============================================================================
@@ -603,10 +669,25 @@ us under our own splits and protocol (Section~\ref{sec:main-res}); CTformer and
 the remaining methods are still quoted from the literature, and the
 training-set differences noted there apply to them. Retraining further baselines
 was out of scope here.
+\item \textbf{The 30-epoch budget truncates before convergence.} On nearly every
+run the best validation epoch equals the final epoch ($30/30$), so the three arms
+are compared at a \emph{fixed budget} rather than at their optima. The comparison
+is fair --- every arm receives the identical budget --- but it compares learning
+\emph{trajectories}, not converged solutions. Longer schedules could compress or
+widen the gap; this is untested here.
+\item \textbf{The RED-CNN same-split baseline is a single seed.} We report
+$n=1$ for RED-CNN versus $n=5$/$n=3$ for the three arms, so no seed-level paired
+test is possible against it and we quote no interval. Closing this asymmetry
+requires re-running RED-CNN across seeds (roughly $6\times$ the per-seed cost).
 \item \textbf{The injected defect is structurally simpler than the real one.} We
 perturb the synthesis filter only, whereas the unconstrained arm's two filter
 banks drift apart independently. The intervention establishes sufficiency at
 matched magnitude (Section~\ref{sec:mech}), not exact reproduction.
+\item \textbf{The PR arm's seed-to-seed spread is numerically larger}
+(SD 0.0815 vs.\ 0.0305 and 0.0256~dB), though a Levene test does not confirm
+heteroscedasticity at $n=5$ ($p=0.167$ S1, $0.630$ S2). We flag it rather than
+claim it: if real, PR-LWT's advantage carries a modestly higher training-variance
+cost. More seeds are needed to settle this.
 \item \textbf{No downstream task} (e.g.\ segmentation) is evaluated.
 \end{enumerate}
 
