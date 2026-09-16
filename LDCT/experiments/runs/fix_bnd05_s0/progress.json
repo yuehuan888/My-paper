@@ -1,0 +1,10 @@
+{
+  "tag": "fix_bnd05_s0",
+  "epoch": 8,
+  "epochs": 30,
+  "best_epoch": 5,
+  "best_val_psnr": 29.359479881931673,
+  "elapsed_min": 2.155724593003591,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T09:02:48.572315+00:00"
+}

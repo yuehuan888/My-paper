@@ -1,0 +1,10 @@
+{
+  "tag": "fix_pr_s7",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.778772648847486,
+  "elapsed_min": 7.122569259007772,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T08:37:21.904349+00:00"
+}

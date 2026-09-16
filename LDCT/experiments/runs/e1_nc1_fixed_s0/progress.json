@@ -1,10 +1,10 @@
 {
   "tag": "e1_nc1_fixed_s0",
-  "epoch": 6,
+  "epoch": 30,
   "epochs": 30,
-  "best_epoch": 5,
-  "best_val_psnr": 27.937072486988658,
-  "elapsed_min": 0.5057227889696757,
+  "best_epoch": 10,
+  "best_val_psnr": 27.996278818425214,
+  "elapsed_min": 5.5141074379285175,
   "peak_vram_mb": 305.5,
-  "updated": "2026-09-16T07:35:48.666495+00:00"
+  "updated": "2026-09-16T07:44:19.643766+00:00"
 }
