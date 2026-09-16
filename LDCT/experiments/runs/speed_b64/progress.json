@@ -1,0 +1,10 @@
+{
+  "tag": "speed_b64",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.31757986441298,
+  "elapsed_min": 0.6796519796053568,
+  "peak_vram_mb": 316.1,
+  "updated": "2026-09-16T03:04:12.008266+00:00"
+}

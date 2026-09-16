@@ -1,0 +1,10 @@
+{
+  "tag": "conc_1",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.87975671061969,
+  "elapsed_min": 3.7826220870018004,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T03:08:39.120275+00:00"
+}

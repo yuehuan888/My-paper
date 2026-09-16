@@ -1,0 +1,10 @@
+{
+  "tag": "speed_w4",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.803280855406825,
+  "elapsed_min": 2.9596330324808755,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T03:01:35.113321+00:00"
+}

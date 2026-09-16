@@ -264,6 +264,9 @@ def train(args):
         "created": datetime.now(timezone.utc).isoformat(),
         "code_version": code_version(), "seed": args.seed,
         "epochs": args.epochs, "batch_size": args.batch_size,
+        # 数据加载并行度会影响**速度但不影响数值**（增广的随机性与 worker 数无关，
+        # 由 torch 全局种子决定）。仍记录，便于区分"快但同样的结果"与"配置变了"。
+        "workers": args.workers,
         "patch": args.patch, "learning_rate": args.learning_rate,
         "lr_milestones": None, "levels": args.levels,
         "mid_ch": args.mid_ch, "n_conv": args.n_conv,
@@ -310,8 +313,21 @@ def train(args):
     print(f"  代码版本  : {cfg['code_version']}")
     print("=" * 78)
 
+    # ---------------------------------------------------------------- 数据加载
+    # 为什么改成可配的 num_workers（2026-09-16 实测）：
+    #   原先 `num_workers=0` —— 主进程串行读盘 + 增广，GPU 全程在**等**数据。
+    #   实测（RTX 3050 6GB，本模型仅 2,159 参数 / 激活 ~15 MB）：
+    #       GPU 利用率 22–41%、显存 1.0–1.4 GB/6 GB、功耗 22–40 W
+    #    即**两边都很闲**，瓶颈是数据而非算力。30 轮 2.7 分钟 = 27 ms/步，
+    #    对这样小的模型慢得反常。
+    #   Windows 下 worker>0 走 spawn，有固定启动开销（每轮 DataLoader 重建一次），
+    #    故默认取 4 而非更大；--workers 0 可退回原行为以保证数字可比。
+    _workers = max(0, int(args.workers))
+    _persist = _workers > 0          # 无 worker 时 persistent 无意义
     tr_loader = DataLoader(tr, batch_size=args.batch_size, shuffle=True,
-                           num_workers=0, pin_memory=True, drop_last=True)
+                           num_workers=_workers, pin_memory=True, drop_last=True,
+                           persistent_workers=_persist,
+                           prefetch_factor=4 if _workers > 0 else None)
     va_loader = DataLoader(va, batch_size=1, shuffle=False, num_workers=0)
 
     criterion = nn.L1Loss()
@@ -496,6 +512,14 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch-size", type=int, default=8)
+    # 数据加载并行度。**默认 0（保持原行为）**。
+    # 2026-09-16 实测：workers=4 反而更慢（177.6s vs 162.9s，30 轮）——
+    # Windows 下 worker>0 走 spawn，进程启动与数据序列化的开销超过了并行收益，
+    # 而 h5 读取本来就快。所以 GPU 空转**不是**数据加载造成的。
+    # 真正的瓶颈是 kernel launch 开销（模型只有 2,159 参数，算子极小，
+    # batch 8 / patch 128 每次 kernel 干的活不够填启动开销）。
+    ap.add_argument("--workers", type=int, default=0,
+                    help="DataLoader worker 数（0=串行；实测 Windows 下 >0 更慢）")
     ap.add_argument("--patch", type=int, default=128)
     ap.add_argument("--learning-rate", type=float, default=1e-3)
     ap.add_argument("--levels", type=int, default=2)

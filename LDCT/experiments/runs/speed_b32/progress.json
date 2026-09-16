@@ -1,0 +1,10 @@
+{
+  "tag": "speed_b32",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.565937592753862,
+  "elapsed_min": 0.8811282952626546,
+  "peak_vram_mb": 310.1,
+  "updated": "2026-09-16T03:03:11.443081+00:00"
+}

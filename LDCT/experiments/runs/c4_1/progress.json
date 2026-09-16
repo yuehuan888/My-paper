@@ -1,0 +1,10 @@
+{
+  "tag": "c4_1",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.88803490952917,
+  "elapsed_min": 4.684217496713003,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T03:13:55.535181+00:00"
+}

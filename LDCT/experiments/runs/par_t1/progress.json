@@ -1,0 +1,10 @@
+{
+  "tag": "par_t1",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.920949057309343,
+  "elapsed_min": 5.61367621421814,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T03:20:38.654437+00:00"
+}
