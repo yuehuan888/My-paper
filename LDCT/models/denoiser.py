@@ -98,7 +98,8 @@ class PRWaveletDenoiser(nn.Module):
 
     def __init__(self, levels: int = 2, mid_ch: int = 16, n_conv: int = 2,
                  wavelet: str = "pr", global_residual: bool = False,
-                 synth_mismatch: float = 0.0, n_taps: int = 3, bound: float = 0.5):
+                 synth_mismatch: float = 0.0, n_taps: int = 3, bound: float = 0.5,
+                 init_drift: float = 0.0):
         super().__init__()
         if wavelet not in ("pr", "fixed", "unconstrained"):
             raise ValueError(f"未知 wavelet={wavelet!r}")
@@ -115,6 +116,9 @@ class PRWaveletDenoiser(nn.Module):
         #    暴露此参数后才能做 bound 扫描，把"需要界定"从断言变成剂量-响应。
         self.n_taps = int(n_taps)
         self.bound = float(bound)
+        # E3 用：把 taps 初始化在离 Haar 距离 init_drift 处。
+        # 默认 0 = 严格 Haar 初始化，**对已有结果零影响**。
+        self.init_drift = float(init_drift)
         if n_taps % 2 == 0:
             raise ValueError(f"n_taps 必须为奇数（零填充需要中心抽头），得到 {n_taps}")
         if bound < 0:
@@ -135,7 +139,8 @@ class PRWaveletDenoiser(nn.Module):
             self.wavelet = MultiLevelLifting(levels=levels, n_taps=self.n_taps,
                                              learnable=(wavelet == "pr"),
                                              bound=self.bound,
-                                             synth_mismatch=synth_mismatch)
+                                             synth_mismatch=synth_mismatch,
+                                             init_drift=self.init_drift)
             self.dwt = self.idwt = None
         # 子带名随 levels 变化（levels=2 -> 7 个子带，levels=3 -> 10 个）。
         # 头数与子带数保持一致，故这里必须用实例级的名字列表。

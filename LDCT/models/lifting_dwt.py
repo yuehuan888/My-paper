@@ -104,7 +104,8 @@ class _LiftingBank1D(nn.Module):
     """
 
     def __init__(self, n_taps: int = 3, learnable: bool = True,
-                 bound: float = 0.5, synth_mismatch: float = 0.0):
+                 bound: float = 0.5, synth_mismatch: float = 0.0,
+                 init_drift: float = 0.0):
         super().__init__()
         self.n_taps = n_taps
         self.bound = float(bound)
@@ -121,13 +122,35 @@ class _LiftingBank1D(nn.Module):
         self.register_buffer("p_init", p0)
         self.register_buffer("u_init", u0)
 
+        # ---- 初始漂移（E3：检验"训练会不会把 taps 拉回 Haar"）--------------
+        # init_drift = d > 0 时，把 θ 初值设为 atanh(d / bound)，使
+        #     |P − P_init| = |U − U_init| ≈ d
+        # 即**从离 Haar 距离 d 处出发**。若训练把它拉回接近 0，说明该任务的最优
+        # 小波就在 Haar 附近 —— 这从因果上解释了"可学习小波没学到东西"。
+        #
+        # ⚠️ 必须 d < bound，否则 atanh 发散。做 E3 时应把 bound 开到足够大
+        #    （如 8.0），否则 init_drift=1/2/4 根本到不了。
+        # ⚠️ 方向用正负交替，让 P 与 U 朝相反方向偏，避免只沿一个方向退化。
+        # 默认 d=0 -> θ=0 -> 严格等于 Haar，**对已有结果零影响**。
+        d = float(init_drift)
+        if d < 0:
+            raise ValueError(f"init_drift 必须非负，得到 {d}")
+        if d > 0 and d >= bound:
+            raise ValueError(
+                f"init_drift={d} 必须 < bound={bound}（否则 atanh 发散）。"
+                f"做 E3 时请把 --bound 开大，例如 --bound 8.0")
+        th0 = (torch.full((n_taps,), math.atanh(d / bound)) if d > 0
+               else torch.zeros(n_taps))
+        if d > 0:
+            sign = torch.tensor([(-1.0) ** i for i in range(n_taps)])
+            th0 = th0 * sign
         if learnable:
             # θ=0 时 tanh(0)=0，故初始严格等于 Haar 等价形式
-            self.theta_P = nn.Parameter(torch.zeros(n_taps))
-            self.theta_U = nn.Parameter(torch.zeros(n_taps))
+            self.theta_P = nn.Parameter(th0.clone())
+            self.theta_U = nn.Parameter(-th0.clone())   # P、U 反向初始
         else:
-            self.register_buffer("theta_P", torch.zeros(n_taps))
-            self.register_buffer("theta_U", torch.zeros(n_taps))
+            self.register_buffer("theta_P", th0.clone())
+            self.register_buffer("theta_U", -th0.clone())
 
     @property
     def P(self) -> torch.Tensor:
@@ -215,10 +238,10 @@ class LiftingWavelet2D(nn.Module):
     """
 
     def __init__(self, n_taps: int = 3, learnable: bool = True, bound: float = 0.5,
-                 synth_mismatch: float = 0.0):
+                 synth_mismatch: float = 0.0, init_drift: float = 0.0):
         super().__init__()
-        self.vert = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch)   # 沿高度 (dim -2)
-        self.horiz = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch)  # 沿宽度 (dim -1)
+        self.vert = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch, init_drift)
+        self.horiz = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch, init_drift)
 
     def forward(self, x: torch.Tensor, normalize: bool = True):
         """子带命名与旧 `dwt_layer._haar_filters()` 对齐：
@@ -271,14 +294,16 @@ class MultiLevelLifting(nn.Module):
         return tuple(names)
 
     def __init__(self, levels: int = 2, n_taps: int = 3, learnable: bool = True,
-                 bound: float = 0.5, synth_mismatch: float = 0.0):
+                 bound: float = 0.5, synth_mismatch: float = 0.0,
+                 init_drift: float = 0.0):
         super().__init__()
         self.levels = levels
         self.n_taps = n_taps
         self.bound = bound
         self.synth_mismatch = float(synth_mismatch)
+        self.init_drift = float(init_drift)
         self.banks = nn.ModuleList(
-            [LiftingWavelet2D(n_taps, learnable, bound, synth_mismatch)
+            [LiftingWavelet2D(n_taps, learnable, bound, synth_mismatch, init_drift)
              for _ in range(levels)]
         )
 
