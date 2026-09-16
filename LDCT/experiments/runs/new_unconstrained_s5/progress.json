@@ -1,0 +1,10 @@
+{
+  "tag": "new_unconstrained_s5",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.675629657489566,
+  "elapsed_min": 2.9251492460568747,
+  "peak_vram_mb": 305.3,
+  "updated": "2026-09-16T03:41:21.325072+00:00"
+}

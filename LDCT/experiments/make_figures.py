@@ -255,10 +255,17 @@ def fig_mech2(out):
     分成两张是重复，合成一张才完整：从**相关**到**因果**。
 
     数据源
-        (a) roundtrip_checkpoints_w3.json   （verify_roundtrip.py --checkpoints）
+        (a) roundtrip_checkpoints_new.json  —— **优先**，n=10（2026-09-16 重训后）
+            roundtrip_checkpoints_w3.json   —— 回退，n=1（旧数据，原始论文用的）
         (b) intervention_results.json        （analyze_intervention.py）
+
+    ⚠️ 为什么优先用 new_：闭环误差是在**固定随机探针**上测的，与测试集无关，
+       所以种子数是这里唯一有意义的量。旧文件只有 n=1，画出来的误差棒恒为 0，
+       与题注声称的 "n=10; error bars are std" 矛盾（这处矛盾被审计抓到过）。
     """
-    rt_path = os.path.join(HERE, "roundtrip_checkpoints_w3.json")
+    rt_path = os.path.join(HERE, "roundtrip_checkpoints_new.json")
+    if not os.path.exists(rt_path):
+        rt_path = os.path.join(HERE, "roundtrip_checkpoints_w3.json")
     iv_path = os.path.join(HERE, "intervention_results.json")
     with open(rt_path, encoding="utf-8") as f:
         rt = json.load(f)

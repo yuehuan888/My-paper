@@ -17,7 +17,7 @@ unconstrained–fixed gap is **0.025 dB — 5.6× below that floor** — so we s
 result as a bound rather than an absence: any real difference is smaller than
 **0.14 dB**, roughly **half** the benefit that perfect reconstruction later
 delivers. We trace the failure to the transform's reconstruction error, which
-reaches **12–16%** after training. We show this is **causal, not merely
+reaches **11–18%** after training. We show this is **causal, not merely
 correlated**: injecting a controlled error of the same magnitude into the
 perfect-reconstruction arm degrades it to the fixed-Haar level. Imposing
 perfect reconstruction *by construction* — parameterizing the wavelet as a lifting
@@ -69,12 +69,12 @@ difference is smaller than **0.14 dB**, roughly half of what PR delivers. A weak
 experiment could not have resolved the effect that PR produces.
 
 **Why** it fails is the substance of the paper. After training, the unconstrained
-pair loses **12–16%** of the signal in a forward–backward pass, against
+pair loses **11–18%** of the signal in a forward–backward pass, against
 **1.6e-07** for both invertible arms. We show this is **causal, not merely
 correlated**: holding architecture, capacity and protocol fixed, we inject a
 controlled round-trip error into the PR arm, and it degrades **monotonically** to
 the fixed-Haar level (8.7% error → 30.5500 dB, against 30.5591 dB for an arm that
-never learned anything; $p \le 0.001$ at every dose). Prior invertible-wavelet
+never learned anything; $p \le 0.007$ at every dose). Prior invertible-wavelet
 denoisers cannot observe this state, because their designs make it unreachable.
 
 **Contributions.**
@@ -228,8 +228,16 @@ evaluate    denormalize to HU; clip both prediction and reference to [-160, 240]
 aggregate   per-slice metrics, then mean
 ```
 
-Our implementation reproduces an independent measurement of the identity
-baseline **exactly** (L506 29.2489, L067 26.5576, combined 27.8630).
+The identity baseline under this protocol is L506 29.2489, L067 26.5576,
+combined 27.8630 dB. **We do not claim these as an independent confirmation.**
+They are computed by our own implementation and, to our knowledge, agreement at
+the 0.01 dB level across published work on this dataset is *not* achievable in
+general: independent re-analyses of the same cohort differ by up to **~2 dB**
+(e.g. a third-party report of 27.24 dB on L506 against our 29.2489), and the
+Eulig et al. benchmark places its identity-equivalent reference 0.8 dB away.
+Cross-paper PSNR on AAPM-Mayo therefore carries a noise floor of roughly 2 dB,
+which is why every claim in this paper is made against **same-protocol
+baselines** rather than against quoted numbers.
 
 ### 4.3 Splits
 
@@ -363,8 +371,10 @@ $4\times10^{-4}$ SSIM difference that vanishes on the other split.
 > all comparisons **within** this paper are like-for-like. Its agreement with
 > the SSIM of the reference RED-CNN/CTformer code was **not** independently
 > verified, so we do not compare our SSIM against *published* SSIM values. The
-> PSNR protocol, by contrast, was verified against an independent measurement
-> (§5.1).
+> same caution applies to PSNR across papers: §4.2 documents a ~2 dB cross-paper
+> noise floor on this dataset, so all quantitative comparisons here are against
+> **same-protocol** baselines — the same-split RED-CNN reproduction in §5.1, and
+> the arms of the three-way ablation — never against quoted numbers.
 
 **What this experiment can and cannot detect (Fig. 5).** Because the null result
 carries much of the argument, we quantify the design's resolution directly. For a
@@ -420,27 +430,26 @@ makes learnability pay.**
 
 We measure the analysis–synthesis round-trip error of the **trained** transforms
 on their final checkpoints (`experiments/verify_roundtrip.py --checkpoints`),
-over all seeds whose checkpoints were retained (S1: $n=1$; S2: $n=3$).
-Panel (a) of Fig. 2 shows these; panel (b) shows the intervention described
-below.
+over ten seeds per arm on S1. Panel (a) of Fig. 2 shows these; panel (b) shows
+the intervention described below.
 
-| Arm | Wavelet params | Round-trip error (rel. L2), S1 ($n$=1) | S2 ($n$=3) |
+| Arm | Wavelet params | Round-trip error (rel. L2), S1 ($n=10$) | S2 ($n=3$) |
 |---|---|---|---|
-| `pr` | 24 | **1.62e-07** | **1.65e-07** |
-| `fixed` | 0 | 1.64e-07 | 1.64e-07 |
-| `unconstrained` | 64 | **1.49e-01** | **1.45e-01** |
+| `pr` | 24 | **1.62e-07** ± 0.01e-07 | **1.65e-07** |
+| `fixed` | 0 | 1.64e-07 (identical across seeds) | 1.64e-07 |
+| `unconstrained` | 64 | **1.35e-01** ± 0.19e-01 | **1.45e-01** |
 
-> **A note on $n$.** The S1 figure rests on a single retained checkpoint, not a
-> five-seed mean; only S2 has $n=3$ (per-seed 0.119 / 0.152 / 0.164). We report
-> the S1 value as the single measurement it is. Recovering a true S1 five-seed
-> mean requires re-training that arm, since checkpoints from the original run
-> were not retained (see §6).
+> **On the measurement.** The round-trip error is probed on a fixed random
+> input, so it is a property of the trained transform rather than of the test
+> set — the seed count is the only thing that matters here, and S1 now has ten
+> seeds per arm. The `fixed` arm is seed-invariant by construction (no learned
+> parameters), which is why its spread is zero.
 
-Unconstrained learning drives the transform to a state where **12–16% of the
-signal is lost in a forward–backward pass** (S1 14.9%; S2 mean 14.5%,
-per-seed 11.9–16.4%), against **1.6e-07** — the float32 limit — for the two
-invertible arms: a gap of **six orders of magnitude**. The network must then
-denoise *and* compensate for its own transform.
+Unconstrained learning drives the transform to a state where **11–18% of the
+signal is lost in a forward–backward pass** (S1 mean 13.5%, per-seed 11.4–17.9%;
+S2 mean 14.5%, per-seed 11.9–16.4%), against **1.6e-07** — the float32 limit —
+for the two invertible arms. That gap spans **5.9 orders of magnitude**; the
+network must then denoise *and* compensate for its own transform.
 
 **The comparison above is correlational.** The unconstrained arm both loses
 invertibility *and* performs like fixed Haar; that alone does not show the former

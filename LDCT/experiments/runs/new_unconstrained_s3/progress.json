@@ -1,0 +1,10 @@
+{
+  "tag": "new_unconstrained_s3",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.59413125285602,
+  "elapsed_min": 2.837999188899994,
+  "peak_vram_mb": 305.3,
+  "updated": "2026-09-16T03:36:09.437633+00:00"
+}

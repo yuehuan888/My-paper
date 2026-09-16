@@ -124,7 +124,7 @@ pass, against \textbf{1.6e-07} for both invertible arms. We show this is
 protocol fixed, we inject a controlled round-trip error into the PR arm, and it
 degrades \textbf{monotonically} to the fixed-Haar level (8.7\% error $\to$
 30.5500~dB, against 30.5591~dB for an arm that never learned anything;
-$p \le 0.001$ at every dose). Prior invertible-wavelet denoisers cannot observe
+$p \le 0.007$ at every dose). Prior invertible-wavelet denoisers cannot observe
 this state, because their designs make it unreachable.
 
 \textbf{Contributions.}
@@ -306,8 +306,14 @@ aggregate & per-slice metrics, then mean
 \end{tabular}
 \end{quote}
 
-Our implementation reproduces an independent measurement of the identity
-baseline \textbf{exactly} (L506 29.2489, L067 26.5576, combined 27.8630).
+The identity baseline under this protocol is L506 29.2489, L067 26.5576,
+combined 27.8630~dB. \textbf{We do not claim these as an independent
+confirmation}, and we caution against reading cross-paper PSNR on this dataset at
+face value: independent re-analyses of the same cohort differ by up to
+\textbf{$\sim$2~dB} (a third-party report gives 27.24~dB on L506 against our
+29.2489), and the Eulig et al.\ benchmark places its identity-equivalent
+reference 0.8~dB away. Every claim below is therefore made against
+\textbf{same-protocol baselines} rather than against quoted numbers.
 
 \subsection{Splits}
 Two patient-level splits are used to show robustness
@@ -565,32 +571,34 @@ learnability pay.}
 
 We measure the analysis--synthesis round-trip error of the \textbf{trained}
 transforms on their final checkpoints (Table~\ref{tab:rt}, and
-Fig.~\ref{fig:mech}a), over all seeds whose checkpoints were retained
-(S1: $n=1$; S2: $n=3$).
+Fig.~\ref{fig:mech}a), over ten seeds per arm on S1.
 
 \begin{table}[t]
 \centering
 \caption{Round-trip error (relative $L_2$) of the trained transforms, on the
-final retained checkpoint of each arm. S1 rests on $n=1$ checkpoint, S2 on
-$n=3$; this is a property of what was retained, not of the measurement.}
+final checkpoint of each arm. The probe uses a fixed random input, so this is a
+property of the trained transform rather than of the test set; the seed count is
+therefore the only thing that matters, and S1 has $n=10$. The \texttt{fixed} arm
+has no learned parameters and is seed-invariant by construction.}
 \label{tab:rt}
 \small
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-Arm & Wavelet params & S1 ($n$=1) & S2 ($n$=3)\\
+Arm & Wavelet params & S1 ($n$=10) & S2 ($n$=3)\\
 \midrule
-\texttt{pr} & 24 & \textbf{1.62e-07} & \textbf{1.65e-07}\\
-\texttt{fixed} & 0 & 1.64e-07 & 1.64e-07\\
-\texttt{unconstrained} & 64 & \textbf{1.49e-01} & \textbf{1.45e-01}\\
+\texttt{pr} & 24 & \textbf{1.62e-07} $\pm$ 0.01e-07 & \textbf{1.65e-07}\\
+\texttt{fixed} & 0 & 1.64e-07 (seed-invariant) & 1.64e-07\\
+\texttt{unconstrained} & 64 & \textbf{1.35e-01} $\pm$ 0.19e-01 & \textbf{1.45e-01}\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Unconstrained learning drives the transform to a state where \textbf{12--16\% of
-the signal is lost in a forward--backward pass} (S1 14.9\%; S2 mean 14.5\%,
-per-seed 11.9--16.4\%), against $1.6\times10^{-7}$ --- the float32 limit --- for
-the two invertible arms: a gap of \textbf{six orders of magnitude}. The network
-must then denoise \emph{and} compensate for its own transform.
+Unconstrained learning drives the transform to a state where \textbf{11--18\% of
+the signal is lost in a forward--backward pass} (S1 mean 13.5\%, per-seed
+11.4--17.9\%; S2 mean 14.5\%, per-seed 11.9--16.4\%), against
+$1.6\times10^{-7}$ --- the float32 limit --- for the two invertible arms. That
+gap spans \textbf{5.9 orders of magnitude}; the network must then denoise
+\emph{and} compensate for its own transform.
 
 \textbf{The comparison above is correlational.} The unconstrained arm both loses
 invertibility \emph{and} performs like fixed Haar; that alone does not show the
@@ -641,9 +649,10 @@ adaptive. \textbf{This is the entire mechanism.}
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig2_mech.png}
-\caption{\textbf{(a)}~Round-trip error of the trained transforms ($n=5$ seeds on
-S1; error bars are std): the two invertible arms sit at the float32 limit, the
-unconstrained arm six orders of magnitude above them. \textbf{(b)}~Intervention:
+\caption{\textbf{(a)}~Round-trip error of the trained transforms ($n=10$ seeds on
+S1; error bars are std) on a fixed random probe: the two invertible arms sit at
+the float32 limit, the unconstrained arm 5.9 orders of magnitude above them.
+\textbf{(b)}~Intervention:
 injecting that error into the PR arm degrades it monotonically, crossing both the
 fixed-Haar and the unconstrained reference levels. The square marks the
 unconstrained arm's own operating point.}

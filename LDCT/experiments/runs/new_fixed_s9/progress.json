@@ -1,0 +1,10 @@
+{
+  "tag": "new_fixed_s9",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.57946114498394,
+  "elapsed_min": 2.965781815846761,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T03:50:04.268529+00:00"
+}
