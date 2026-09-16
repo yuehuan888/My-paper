@@ -29,6 +29,20 @@ consistent across two data splits. The resulting network has
 a RED-CNN baseline trained under the identical protocol at **857× fewer
 parameters**.
 
+Two further results locate the effect. First, the transform learns *little*: from
+any numerically intact starting point, training converges to a narrow band of
+drift from Haar and, starting **at** Haar, moves **away** — the optimum is
+slightly off Haar, which is why adaptation buys so little here. We also reject
+the natural explanation that the heads simply substitute for the transform: the
+PR advantage does not shrink as head capacity grows by two orders of magnitude.
+Second, the failure mode is a **cliff, not a slope** — once the forward
+transform's round-trip error exceeds the signal, the gradient carries no
+information and training cannot recover (drift 4.0 stays at 4.000 and 3.29 dB,
+where drift 2.0 recovers fully). Being inside the numerical envelope is
+therefore binary, which is why bounding is necessary — and why the bound's
+value matters more than expected: our default costs **+0.10 to +0.15 dB**, about
+half the entire PR effect.
+
 ---
 
 ## 1. Introduction
@@ -85,15 +99,26 @@ denoisers cannot observe this state, because their designs make it unreachable.
    a round-trip error of the same magnitude is *sufficient* to destroy the
    benefit, monotonically and significantly (n = 5 seeds, p ≤ 0.007 at every
    dose). Prior invertible-wavelet denoisers cannot observe this state.
-3. **A conditioning requirement, not merely a reversibility one.** Structural PR
-   does not enforce itself in float32. We characterize this by a **controlled
-   sweep of tap magnitude**: holding the architecture fixed and scaling the
-   lifting taps from 1.0 to 5.3, the round-trip error grows from 3.6e-07 to
-   5.2e+00. Bounding the taps (our `bound = 0.5`) is what keeps the construction
-   usable, and the invertible-network literature does not report this failure
-   mode. *We note this is a controlled analysis of the parameter regime, not a
-   training-drift measurement.*
-4. **A 2,159-parameter network** that comes within 1.0 dB of a same-protocol
+3. **A numerical envelope, and what happens outside it.** Structural PR does not
+   enforce itself in float32. We characterise the boundary in two ways. By a
+   controlled sweep of tap magnitude, the round-trip error grows from 3.6e-07 at
+   $|{\rm taps}| \approx 1.0$ to 5.2e+00 at $\approx 5.3$ (*a controlled analysis
+   of the parameter regime, not a training-drift measurement*). And by
+   initialising the taps at a known distance from Haar, we show that crossing
+   this boundary is a **cliff**: at drift 4.0 the forward transform emits noise,
+   the gradient carries no information, and training stays exactly where it
+   started (final drift 4.000, 3.29 dB), whereas drift 2.0 recovers fully. Being
+   inside the envelope is therefore not a matter of degree — which is why we
+   bound the taps, and why the bound's value matters more than we expected
+   (§5.4).
+4. **What the transform actually learns.** From any numerically intact starting
+   point, training converges to a **narrow band of drift from Haar
+   ($\approx$0.65–0.78)**; starting *at* Haar, it moves away. The optimum is
+   therefore slightly off Haar, which is the concrete reason "learning" buys so
+   little here. We also test — and reject — the natural hypothesis that the heads
+   simply substitute for the transform: the PR advantage does not shrink as head
+   capacity grows by two orders of magnitude.
+5. **A 2,159-parameter network** that comes within 1.0 dB of a same-protocol
    RED-CNN baseline at **857× fewer parameters**.
 
 ---
@@ -345,6 +370,57 @@ the independent unit):
 | S2 | `pr` − `fixed` | **+0.2794** | 10.95 | **0.008** | [+0.170, +0.389] | **+6.32** | 1.15× |
 | S2 | `unconstrained` − `fixed` | −0.0148 | −1.25 | 0.337 | [−0.066, **+0.036**] | −0.72 | 0.06× |
 
+#### 5.2.1 Independently re-acquired data, ten seeds per arm
+
+Between the original experiments and this write-up the dataset had to be
+**re-acquired from scratch**: the official AAPM Box distribution became
+unreachable, the Kaggle mirror that replaced it was withdrawn mid-download, and
+the copy used here was reassembled from a partial archive whose 3-mm B30 region
+contains holes (L067 is missing 13 slices, L506 one, giving a **421-slice** test
+set instead of 435). Because the data therefore differs, every headline result
+was re-run end to end.
+
+This turned out to be useful: it is a **de facto replication**, and the two
+protocol changes it forced are worth stating, because both are corrections.
+
+**(a) The training protocol was not reproducible.** Random patch cropping drew
+from an unseeded generator, so a given `--seed` did not reproduce a run; repeated
+runs with the same seed differed by $\sim$0.04 dB. All numbers below come from
+the corrected, seed-deterministic pipeline, which reproduces **bit-identically**
+(verified: two runs of the same seed give the same PSNR to ten decimal places).
+
+**(b) The re-run is better powered.** Ten seeds per arm instead of five, which
+tightens the detection floor from **0.136 dB to 0.064 dB**.
+
+| Split | Arm | Original (435 slices, $n$=5) | Re-acquired (421 slices, $n$=10) |
+|---|---|---|---|
+| S1 | `pr` | 30.8314 ± 0.0815 | **30.8575 ± 0.0740** |
+| S1 | `unconstrained` | 30.5341 ± 0.0305 | 30.5427 ± 0.0460 |
+| S1 | `fixed` | 30.5591 ± 0.0256 | 30.5739 ± 0.0497 |
+
+**Paired comparisons on the re-acquired data:**
+
+| Comparison | Δ (dB) | $p$ | Cohen's $d_z$ | $\lvert\Delta\rvert$/MDES | Original Δ |
+|---|---|---|---|---|---|
+| `pr` − `unconstrained` | **+0.3148** | **<0.0001** | **+5.13** | **4.28×** | +0.2973 |
+| `pr` − `fixed` | **+0.2837** | **<0.0001** | **+5.04** | **3.85×** | +0.2723 |
+| `unconstrained` − `fixed` | **−0.0312** | **0.0163** | −0.93 | 0.68× | −0.0251 ($p$=0.113) |
+
+**Both positive findings replicate, with larger effect sizes** ($d_z$ = 5.13 and
+5.04 against 4.67 and 4.78), and the ordering is unchanged. The third row
+*changes character* and we report it as such: on the original data the
+`unconstrained` − `fixed` gap was indistinguishable from zero; here it is
+marginally significant **in the negative direction**. Unconstrained learning is
+therefore not merely useless but slightly *harmful*, though we would not press a
+$0.03$ dB effect that sits at $0.68\times$ the detection floor.
+
+**What this does and does not license.** The paired *ratios* replicate cleanly;
+the absolute levels are not directly comparable across the two acquisitions,
+because the test set is 14 slices smaller and its identity floor shifts
+accordingly (27.8630 $\to$ 27.9220 dB). Every comparison above is
+like-for-like *within* its own acquisition, which is the form in which we use
+them.
+
 **Effect sizes are large, not marginal.** The two significant comparisons carry
 $d_z$ = +4.67 and +4.78 (S1), well beyond the conventional "large" threshold of
 0.8. The claim is therefore not that PR-LWT buys a small improvement, but that it
@@ -484,6 +560,87 @@ magnitude**, not exact reproduction of the unconstrained arm's error.
 PR-LWT keeps the round-trip error at the float32 limit while remaining fully
 adaptive. **This is the entire mechanism.**
 
+### 5.4 What the transform actually learns, and where the bound bites
+
+The results so far say the PR constraint is *sufficient* to make learning pay.
+They do not say what the learned transform looks like, or how tight the bound
+must be. Two experiments address this.
+
+**The task has a preferred operating point, and it is not Haar.** We
+initialise the lifting taps at a controlled distance $d$ from the Haar
+initialisation ($\theta_0 = \operatorname{atanh}(d/\beta)$, so
+$|P - P_{\text{init}}| \approx d$) and measure where training leaves them:
+
+| Initial drift $d$ | Drift after training | TEST PSNR |
+|---|---|---|
+| 0.00 (Haar) | **0.775** | **31.034** |
+| 0.50 | 0.709 | 30.983 |
+| 1.00 | 0.773 | 30.776 |
+| 2.00 | 0.654 | 30.578 |
+| 4.00 | 4.000 *(stuck)* | **3.292** |
+
+Over the range where the initial transform is numerically intact ($d \le 2$),
+training converges to a **narrow band of drift, 0.654–0.775** (span 0.12 against
+an initial span of 2.0; $r = -0.75$, i.e. both directions converge inward).
+Starting *at* Haar, training pushes the taps **away** to 0.775 — the gradient
+does not consider Haar optimal. The honest reading is that **the optimal wavelet
+is slightly off Haar, near drift $\approx 0.7$**, which is also why "learning"
+buys so little: there is little to learn. We state this as the measured
+behaviour it is; the residual correlation with the starting point ($r = -0.75$,
+not $-1$) shows the attractor is soft, not exact.
+
+**Numerical collapse is a cliff, not a slope.** At $d = 4$ the initial
+transform's round-trip error is already $4.3\times10^{1}$ — the forward pass
+emits noise. Training then does **nothing**: the drift stays at exactly 4.000 and
+the network reaches **3.29 dB**, i.e. output unrelated to the input. There is no
+gradient signal to recover from, because the coefficients the network receives
+are already garbage. Contrast $d = 2$ (round-trip $1.4\times10^{-2}$), which
+recovers to 0.654 and 30.578 dB. This is why bounding is **necessary** rather
+than merely prudent: crossing the cliff is irreversible *within training*.
+
+**The default bound is tighter than it needs to be.** Sweeping $\beta$:
+
+| Bound $\beta$ | Drift reached | TEST PSNR | $\Delta$ vs default | $p$ |
+|---|---|---|---|---|
+| **0.5 (default)** | 0.229 | 30.885 | — | — |
+| 1.0 | 0.293 | 30.986 | **+0.101** | **0.038** |
+| 2.0 | 0.371 | 31.036 | **+0.151** | **0.029** |
+| 4.0 | 0.651 | 31.050 | +0.165 | 0.058 |
+| 8.0 | 0.775 | 31.034 | +0.149 | 0.062 |
+
+The bound does not clip the drift (utilisation is 46% at $\beta = 0.5$);
+it **limits how far the optimiser searches**, and the drift it reaches rises
+monotonically with $\beta$, pulling PSNR up with it. At $\beta = 0.5$ — the value
+used everywhere else in this paper — the optimiser settles at drift 0.23, far
+below the $\approx 0.7$ the model prefers, costing **+0.10 to +0.15 dB**.
+That is roughly **half of the entire PR effect**, for one hyper-parameter.
+
+> **Boundaries on this claim.** Only $\beta = 0.5$ has $n = 10$ seeds; the other
+> four have $n = 3$, so the *location* of the peak is not established — 4.0 and
+> 8.0 are individually marginal ($p = 0.058$, $0.062$). What the data support is
+> that **the default is significantly worse than 1.0 and 2.0**. We report the
+> peak as nominal and do not claim an optimum.
+
+**A hypothesis we tested and rejected.** One natural explanation for the whole
+negative result is that the heads can *substitute* for the transform: give them
+enough capacity and a good wavelet stops mattering. We tested this by varying
+head capacity (`--n-conv`, 94 → 2,159 → 18,399 parameters) and measuring the
+PR − fixed gap:
+
+| Head capacity | $\Delta$(PR − Fixed Haar) | $n$ |
+|---|---|---|
+| 94 | +0.186 | 3 |
+| 2,159 | +0.284 | 10 |
+| 18,399 | +0.304 | 3 |
+
+The gap **grows** with capacity rather than shrinking ($r = +0.968$ on
+$\log_{10}$ params) — the opposite of substitution. The defensible statement is
+therefore a **robustness** one: the PR advantage persists across two orders of
+magnitude of head capacity (always 0.19–0.30 dB); it neither vanishes when the
+heads grow nor amplifies when they shrink. With $n = 3$ at both ends we do not
+claim the upward trend itself. This rules out "the transform is just covering for
+weak heads" as an explanation.
+
 ---
 
 ## 6. Discussion and Limitations
@@ -522,20 +679,50 @@ error the network must model, which is what allows adaptation to help.
    heteroscedasticity at $n=5$ ($p$ = 0.167 S1, 0.630 S2). We flag it rather than
    claim it: if real, it would mean PR-LWT's advantage carries a modestly higher
    training-variance cost. More seeds are needed to settle this.
-7. **No downstream task** (e.g. segmentation) is evaluated.
+7. **The bound was tuned against a measurement that is only significant at
+   $n = 3$** (§5.4). Our claim that $\beta = 0.5$ is worse than 1.0–2.0 rests on
+   three seeds per level; the $+0.10$–$+0.15$ dB it implies should be treated as
+   provisional until replicated with more seeds. We report it because the
+   direction is consistent across all four comparisons, not because it is
+   settled.
+8. **Our head-capacity experiment is underpowered at both ends** ($n = 3$ at 94
+   and 18,399 parameters; $n = 10$ only at the default 2,159). It is enough to
+   *reject* substitution, which is what we use it for, but not to support the
+   apparent upward trend in §5.4.
+9. **The training protocol itself was corrected during this work.** Random patch
+   cropping originally drew from an unseeded generator, so a given `--seed` did
+   not reproduce a given run. All results reported here are from the corrected,
+   seed-deterministic pipeline; the correction changes individual numbers by
+   $\sim0.01$–$0.05$ dB and, more importantly, **reduces the variance** that
+   previously masked the bound effect in §5.4.
+10. **No downstream task** (e.g. segmentation) is evaluated.
 
 ---
 
 ## 7. Conclusion
 
 We asked whether making the wavelet learnable helps LDCT denoising. By default,
-**it does not** — an unconstrained learnable wavelet performs exactly like a
-fixed Haar basis, because learning destroys the transform's invertibility.
-Constraining the wavelet to be perfectly reconstructible by construction — via a
-lifting scheme whose inverse shares the forward filters — makes adaptation pay
-off, for a network of only 2,159 parameters. The lesson generalises beyond this
-task: **when a learned component is meant to be invertible, invertibility should
-be structural rather than hoped for.**
+**it does not** — an unconstrained learnable wavelet performs no better than a
+fixed Haar basis (and, on the corrected pipeline, marginally worse), because
+learning destroys the transform's invertibility. Constraining the wavelet to be
+perfectly reconstructible by construction — via a lifting scheme whose inverse
+shares the forward filters — makes adaptation pay off, for a network of only
+2,159 parameters.
+
+Two further findings sharpen the picture. The transform does learn *something*,
+but not much: from any numerically intact starting point, training converges to a
+narrow band of drift from Haar ($\approx 0.65$–$0.78$), which is why the payoff
+is modest. And the numerical failure mode is a **cliff rather than a slope** —
+once the forward transform's round-trip error exceeds the signal, the coefficients
+are noise, the gradient carries no information, and training cannot recover. That
+is the precise sense in which the bound is necessary: not because performance
+degrades smoothly without it, but because crossing the boundary is irreversible
+within training.
+
+The lesson generalises beyond this task: **when a learned component is meant to
+be invertible, invertibility should be structural rather than hoped for** — and
+the numerical envelope that makes that structure usable deserves to be stated
+explicitly, not left to a default.
 
 ---
 
@@ -688,10 +875,38 @@ Data*, vol. 8, p. 109, 2021.
 
 ---
 
-## 附录 B：图（`experiments/make_figures_ext.py` 产出）
+## 附录 B：图
 
 > 全部图使用**经校验器实测通过**的色盲友好配色（`#2E5EAA` / `#D1495B` / `#7B52AB`，
 > 相邻对 protan ΔE 14.3、常视觉 ΔE 20.0，全部检查项 PASS）。
+
+### B.1 新实验（fig15–fig17，**建议进主文**）
+
+**图 15 — 变换收益 vs 头容量**（`fig15_e1_capacity.png`）
+**否定结果**：假设是"头越小、变换越值钱"，实测方向相反且单调
+（+0.186 @94 参数 → +0.284 @2,159 → +0.304 @18,399）。图如实呈现，含端点档
+仅 $n=3$ 的限制。用途是**排除**"变换只是替弱小的头补课"这一解释。
+
+**图 16 — 初始化距离 → 训练后 drift**（`fig16_e3_initdrift.png`）
+(a) 从 $d \in \{0, 0.5, 1, 2\}$ 出发，训练后 drift 全部落在 **0.654–0.775**
+（起点跨度 2.0，终点跨度 0.12）；从 $d=0$ **出发会被推远**到 0.775，即
+梯度不认为 Haar 最优。(b) $d=4$ 的起点闭环已达 $4.3\times10^1$，训练后
+drift 与 PSNR 都**纹丝不动**（3.29 dB）—— 数值崩溃是**悬崖不是斜坡**。
+
+**图 17 — bound → drift → PSNR 的机制链**（`fig17_bound_drift.png`）
+横轴是**实际 drift**（不是 bound），使 E3 的独立测量能直接叠上去。
+默认 `bound=0.5` 把优化压在 drift 0.23，远低于曲线平台的 0.65–0.78。
+
+### B.2 复现研究（fig10–fig14、fig5–fig9，**建议进补充材料**）
+
+**图 10 — 独立复现**（`fig10_replication.png`）原数据（435 片，$n=5$）与
+重新获取的数据（421 片，$n=10$）上三臂并排，排序与差距不变。
+
+**图 11 — bound 剂量-响应曲线**（`fig11_bound_curve.png`）见 §5.4。
+标题刻意克制为"性能对 bound 取值不敏感"，因 $n=3$ 下只有 1.0/2.0 显著优于默认。
+
+**图 12 — 效应量森林图**（`fig12_effect_forest.png`）原研究 vs 复现研究的
+Δ 与 95% CI，含各自的 MDES 带。
 
 **图 5 — 逐切片分布与方差分解**（`fig5_slice_dist.png`）
 (a) 435 张测试切片上每种子的 PSNR 分布（半小提琴 + 抖动散点，黑线为四分位与中位数）。
