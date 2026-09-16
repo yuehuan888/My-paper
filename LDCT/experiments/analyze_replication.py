@@ -39,8 +39,8 @@ PAPER = {
     },
 }
 # bound 消融的档位（0.5 就是默认，tag 用 new_pr_s*）
-BOUNDS = [(0.5, "new_pr_s%d"), (1.0, "new_bnd10_s%d"), (2.0, "new_bnd20_s%d"),
-          (4.0, "new_bnd40_s%d"), (8.0, "new_bnd80_s%d")]
+BOUNDS = [(0.5, "fix_pr_s%d"), (1.0, "fix_bnd10_s%d"), (2.0, "fix_bnd20_s%d"),
+          (4.0, "fix_bnd40_s%d"), (8.0, "fix_bnd80_s%d")]
 
 
 def psnr(tag):
@@ -59,7 +59,13 @@ def ssim(tag):
         return json.load(f)["test_mean"]["SSIM"]
 
 
-def seed_series(arm, n_seeds=10, prefix="new_"):
+def seed_series(arm, n_seeds=10, prefix="fix_"):
+    """取某臂的逐种子 PSNR。
+
+    ⚠️ 前缀用 `fix_` 而不是 `new_`：`new_*` 那批是在**增广种子修复之前**跑的，
+       同一 seed 重跑结果本就不同（见 data/dataset.py 2026-09-16 的说明），
+       已不再是有效数据。`fix_*` 是修复后重跑的，才是可复现的那一套。
+    """
     v = []
     for s in range(n_seeds):
         x = psnr(f"{prefix}{arm}_s{s}")
@@ -108,7 +114,7 @@ def main():
         arm_data[arm] = v
         if len(v) == 0:
             continue
-        s = ssim(f"new_{arm}_s0")
+        s = ssim(f"fix_{arm}_s0")
         R["arms"][arm] = {
             "n_seeds": len(v), "mean": float(v.mean()),
             "sd": float(v.std(ddof=1)) if len(v) > 1 else 0.0,
