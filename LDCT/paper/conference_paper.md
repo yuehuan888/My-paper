@@ -1,8 +1,15 @@
 # Does Learning a Wavelet Help? Perfect-Reconstruction Constraints Enable Learnable Wavelets for Low-Dose CT Denoising
 
-> **会议版草稿 v1.0** — 2026-09-14
+> **会议版草稿 v2.0** — 2026-09-16
 > 目标：EI 会议（ICIP 5+1 页格式，可适配 ICME 6 页 / EUSIPCO 5 页）
-> 所有数字均来自已完成的 24 组实验，**无占位符**
+> 所有数字均来自已完成的实验，**无占位符**。
+>
+> v2.0 相对 v1.0 的变化：
+>   - 新增 §5.2.1（独立重下数据的复现 + 训练协议可复现性更正）
+>   - 新增 §5.4（变换学到什么 / 数值崩溃是悬崖 / 默认 bound 偏紧 / 容量假设被否定）
+>   - 修掉四处会被审稿人一行推翻的硬伤（假 p 值、图 2 题注谎报 n、无出处的
+>     "独立验证"、identity 地板差点被静默覆盖）
+>   - 图从 4 张增加到 17 张，正文与附录全部接上引用
 
 ---
 
@@ -347,8 +354,8 @@ The arms answer two distinct questions: `pr` vs `unconstrained` isolates the
 effect of **invertibility**; `pr` vs `fixed` isolates the effect of
 **learnability**.
 
-**Results** (mean ± std over seeds; paired t-test with the **training seed** as
-the independent unit):
+**Results** (Fig. 1; mean ± std over seeds; paired t-test with the **training
+seed** as the independent unit):
 
 | Split | Arm | PSNR | n |
 |---|---|---|---|
@@ -390,7 +397,9 @@ the corrected, seed-deterministic pipeline, which reproduces **bit-identically**
 (verified: two runs of the same seed give the same PSNR to ten decimal places).
 
 **(b) The re-run is better powered.** Ten seeds per arm instead of five, which
-tightens the detection floor from **0.136 dB to 0.064 dB**.
+tightens the detection floor from **0.136 dB to 0.064 dB** (Fig. 14). Fig. 10
+places the two acquisitions side by side; Fig. 13 shows the running mean and
+its 95% CI as seeds accumulate.
 
 | Split | Arm | Original (435 slices, $n$=5) | Re-acquired (421 slices, $n$=10) |
 |---|---|---|---|
@@ -505,7 +514,7 @@ makes learnability pay.**
 ### 5.3 Mechanism: what unconstrained learning actually does
 
 We measure the analysis–synthesis round-trip error of the **trained** transforms
-on their final checkpoints (`experiments/verify_roundtrip.py --checkpoints`),
+(Fig. 2a) on their final checkpoints (`experiments/verify_roundtrip.py --checkpoints`),
 over ten seeds per arm on S1. Panel (a) of Fig. 2 shows these; panel (b) shows
 the intervention described below.
 
@@ -566,7 +575,7 @@ The results so far say the PR constraint is *sufficient* to make learning pay.
 They do not say what the learned transform looks like, or how tight the bound
 must be. Two experiments address this.
 
-**The task has a preferred operating point, and it is not Haar.** We
+**The task has a preferred operating point, and it is not Haar** (Fig. 16). We
 initialise the lifting taps at a controlled distance $d$ from the Haar
 initialisation ($\theta_0 = \operatorname{atanh}(d/\beta)$, so
 $|P - P_{\text{init}}| \approx d$) and measure where training leaves them:
@@ -589,7 +598,7 @@ buys so little: there is little to learn. We state this as the measured
 behaviour it is; the residual correlation with the starting point ($r = -0.75$,
 not $-1$) shows the attractor is soft, not exact.
 
-**Numerical collapse is a cliff, not a slope.** At $d = 4$ the initial
+**Numerical collapse is a cliff, not a slope** (Fig. 16b). At $d = 4$ the initial
 transform's round-trip error is already $4.3\times10^{1}$ — the forward pass
 emits noise. Training then does **nothing**: the drift stays at exactly 4.000 and
 the network reaches **3.29 dB**, i.e. output unrelated to the input. There is no
@@ -598,7 +607,7 @@ are already garbage. Contrast $d = 2$ (round-trip $1.4\times10^{-2}$), which
 recovers to 0.654 and 30.578 dB. This is why bounding is **necessary** rather
 than merely prudent: crossing the cliff is irreversible *within training*.
 
-**The default bound is tighter than it needs to be.** Sweeping $\beta$:
+**The default bound is tighter than it needs to be.** (Fig. 11, Fig. 17). Sweeping $\beta$:
 
 | Bound $\beta$ | Drift reached | TEST PSNR | $\Delta$ vs default | $p$ |
 |---|---|---|---|---|
@@ -621,7 +630,7 @@ That is roughly **half of the entire PR effect**, for one hyper-parameter.
 > that **the default is significantly worse than 1.0 and 2.0**. We report the
 > peak as nominal and do not claim an optimum.
 
-**A hypothesis we tested and rejected.** One natural explanation for the whole
+**A hypothesis we tested and rejected** (Fig. 15). One natural explanation for the whole
 negative result is that the heads can *substitute* for the transform: give them
 enough capacity and a good wavelet stops mattering. We tested this by varying
 head capacity (`--n-conv`, 94 → 2,159 → 18,399 parameters) and measuring the
@@ -875,17 +884,22 @@ Data*, vol. 8, p. 109, 2021.
 
 ---
 
-## 附录 B：图
+## 附录 B：图（全部 17 张）
 
 > 全部图使用**经校验器实测通过**的色盲友好配色（`#2E5EAA` / `#D1495B` / `#7B52AB`，
 > 相邻对 protan ΔE 14.3、常视觉 ΔE 20.0，全部检查项 PASS）。
+> 每张图生成后均**渲染出来逐张检查**过（发现并修掉过：森林图组标签被裁、
+> 对数轴次刻度泄漏 `4×10⁰`、fig6 横轴压缩 5 倍、fig17 标题过度声称）。
 
-### B.1 新实验（fig15–fig17，**建议进主文**）
+### B.1 核心机制（fig2、fig16、fig17）
 
-**图 15 — 变换收益 vs 头容量**（`fig15_e1_capacity.png`）
-**否定结果**：假设是"头越小、变换越值钱"，实测方向相反且单调
-（+0.186 @94 参数 → +0.284 @2,159 → +0.304 @18,399）。图如实呈现，含端点档
-仅 $n=3$ 的限制。用途是**排除**"变换只是替弱小的头补课"这一解释。
+**图 2 — 机制双面板**（`fig2_mech.png`）
+(a) 三臂训练后闭环误差（$n=10$，对数轴）：两个可逆臂停在 float32 极限
+（1.6e-07），无约束臂高 **5.9 个数量级**。(b) 干预实验的剂量-响应：
+把同样量级的误差**人为注入** PR 臂，性能单调退化并穿越固定 Haar 水平。
+分组 (a)(b) 在一张图里，是为了呈现从**相关**到**因果**的完整链条。
+
+![fig2](figures/fig2_mech.png)
 
 **图 16 — 初始化距离 → 训练后 drift**（`fig16_e3_initdrift.png`）
 (a) 从 $d \in \{0, 0.5, 1, 2\}$ 出发，训练后 drift 全部落在 **0.654–0.775**
@@ -893,44 +907,103 @@ Data*, vol. 8, p. 109, 2021.
 梯度不认为 Haar 最优。(b) $d=4$ 的起点闭环已达 $4.3\times10^1$，训练后
 drift 与 PSNR 都**纹丝不动**（3.29 dB）—— 数值崩溃是**悬崖不是斜坡**。
 
+![fig16](figures/fig16_e3_initdrift.png)
+
 **图 17 — bound → drift → PSNR 的机制链**（`fig17_bound_drift.png`）
 横轴是**实际 drift**（不是 bound），使 E3 的独立测量能直接叠上去。
 默认 `bound=0.5` 把优化压在 drift 0.23，远低于曲线平台的 0.65–0.78。
 
-### B.2 复现研究（fig10–fig14、fig5–fig9，**建议进补充材料**）
+![fig17](figures/fig17_bound_drift.png)
+
+### B.2 主结果与效率（fig1、fig4、fig3）
+
+**图 1 — 三臂对照**（`fig1_arms.png`）柱状 + 误差棒 + 配对 $p$ 值，
+虚线为 S1 测试集上的 identity 地板。模型必须越过这条线才有意义。
+
+![fig1](figures/fig1_arms.png)
+
+**图 4 — 参数效率**（`fig4_pareto.png`）参数量 vs PSNR（L506）。
+点线为 RED-CNN 的同划分复现（32.9471，距已发表 32.93 仅 0.02 dB）。
+本文方法以 **857× 更少参数**落在 1.0 dB 以内。
+
+![fig4](figures/fig4_pareto.png)
+
+**图 3 — 视觉对比**（`fig3_visual.png`）L506 上低剂量输入 / identity /
+本文结果 / 全剂量参考，以及各自与参考的绝对误差（HU）。
+
+![fig3](figures/fig3_visual.png)
+
+### B.3 复现研究（fig10–fig14）
 
 **图 10 — 独立复现**（`fig10_replication.png`）原数据（435 片，$n=5$）与
 重新获取的数据（421 片，$n=10$）上三臂并排，排序与差距不变。
 
+![fig10](figures/fig10_replication.png)
+
 **图 11 — bound 剂量-响应曲线**（`fig11_bound_curve.png`）见 §5.4。
 标题刻意克制为"性能对 bound 取值不敏感"，因 $n=3$ 下只有 1.0/2.0 显著优于默认。
+
+![fig11](figures/fig11_bound_curve.png)
 
 **图 12 — 效应量森林图**（`fig12_effect_forest.png`）原研究 vs 复现研究的
 Δ 与 95% CI，含各自的 MDES 带。
 
+![fig12](figures/fig12_effect_forest.png)
+
+**图 13 — 种子收敛**（`fig13_seed_conv.png`）均值随种子数 $n$ 的收敛
+与 95% CI 收窄，横线为论文原值（$n=5$，435 片）。
+
+![fig13](figures/fig13_seed_conv.png)
+
+**图 14 — $n=10$ 的功效分析**（`fig14_power_n10.png`）MDES 随 $n$ 的曲线，
+叠加实测效应。$n=10$ 的检出下限为 **0.064 dB**，比 $n=5$ 的 0.136 dB 收紧一倍。
+
+![fig14](figures/fig14_power_n10.png)
+
+### B.4 统计与稳健性（fig5–fig9）
+
 **图 5 — 逐切片分布与方差分解**（`fig5_slice_dist.png`）
-(a) 435 张测试切片上每种子的 PSNR 分布（半小提琴 + 抖动散点，黑线为四分位与中位数）。
+(a) 测试切片上每种子的 PSNR 分布（半小提琴 + 抖动散点，黑线为四分位与中位数）。
 三臂的分布**几乎完全重叠**，说明效应不是被少数切片带出来的。
 (b) 方差分解：**逐切片** SD（1.75–1.80 dB）比**种子间** SD（0.030–0.087 dB）
 大 **20–60 倍** —— 这是"以种子而非切片为分析单元"的直接依据。
+
+![fig5](figures/fig5_slice_dist.png)
 
 **图 6 — 收敛动力学**（`fig6_convergence.png`）
 (a) 训练 L1、(b) 验证 PSNR，各三臂 5 种子均值 ± 1 SD。
 PR-LWT 在**两个**指标上都优于另两臂（末轮 train L1 0.003346 vs 0.003396/0.003414）。
 (b) 中虚线标出**所有种子最优轮次均为第 30 轮**——即训练尚未收敛（见 §6 局限 3）。
 
+![fig6](figures/fig6_convergence.png)
+
 **图 7 — 效应量森林图**（`fig7_forest.png`）
 六个配对比较的 Δ 与 95% CI。灰带为该 $n$ 下的 MDES 区间（"这个样本量测不出来的范围"）。
 两个零结果**完全落在灰带内**，而两个显著结果的 CI 整体在灰带之外。
+
+![fig7](figures/fig7_forest.png)
 
 **图 8 — 功效曲线**（`fig8_power.png`）
 MDES 随种子数 $n$ 的变化。虚线为实测效应：PR 的收益（+0.272 dB）在 $n=5$ 的
 检出线（0.136 dB）**之上**，而 unconstrained–fixed 的差距（0.025 dB）在其**之下 5.6 倍**。
 
+![fig8](figures/fig8_power.png)
+
 **图 9 — 逐患者一致性**（`fig9_perpatient.png`）
 (a) L506（n=211）与 L067（n=224）上效应方向一致；
 (b) 两患者的 identity 地板相差 **2.69 dB**，大于本文报告的任何效应 —— 逐患者报告与
 以种子为单位的必要性再次可见。
+
+![fig9](figures/fig9_perpatient.png)
+
+### B.5 新实验：容量假设（fig15）
+
+**图 15 — 变换收益 vs 头容量**（`fig15_e1_capacity.png`）
+**否定结果**：假设是"头越小、变换越值钱"，实测方向相反且单调
+（+0.186 @94 参数 → +0.284 @2,159 → +0.304 @18,399）。图如实呈现，含端点档
+仅 $n=3$ 的限制。用途是**排除**"变换只是替弱小的头补课"这一解释。
+
+![fig15](figures/fig15_e1_capacity.png)
 
 ---
 
