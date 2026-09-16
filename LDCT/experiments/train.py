@@ -264,8 +264,10 @@ def train(args):
         "created": datetime.now(timezone.utc).isoformat(),
         "code_version": code_version(), "seed": args.seed,
         "epochs": args.epochs, "batch_size": args.batch_size,
-        # 数据加载并行度会影响**速度但不影响数值**（增广的随机性与 worker 数无关，
-        # 由 torch 全局种子决定）。仍记录，便于区分"快但同样的结果"与"配置变了"。
+        # ⚠️ 更正（2026-09-16）：此处原写"parallelism 影响速度但不影响数值"——**是错的**。
+        #    DataLoader 的每个 worker 进程有独立的 torch RNG 状态，而随机裁块正是
+        #    从 torch 全局 RNG 取的。实测同 seed=0：workers=0 得 30.8684、
+        #    workers=4 得 30.8172（差 0.051 dB）。换 workers 等于换了一次实验。
         "workers": args.workers,
         "patch": args.patch, "learning_rate": args.learning_rate,
         "lr_milestones": None, "levels": args.levels,
@@ -314,14 +316,23 @@ def train(args):
     print("=" * 78)
 
     # ---------------------------------------------------------------- 数据加载
-    # 为什么改成可配的 num_workers（2026-09-16 实测）：
-    #   原先 `num_workers=0` —— 主进程串行读盘 + 增广，GPU 全程在**等**数据。
-    #   实测（RTX 3050 6GB，本模型仅 2,159 参数 / 激活 ~15 MB）：
-    #       GPU 利用率 22–41%、显存 1.0–1.4 GB/6 GB、功耗 22–40 W
-    #    即**两边都很闲**，瓶颈是数据而非算力。30 轮 2.7 分钟 = 27 ms/步，
-    #    对这样小的模型慢得反常。
-    #   Windows 下 worker>0 走 spawn，有固定启动开销（每轮 DataLoader 重建一次），
-    #    故默认取 4 而非更大；--workers 0 可退回原行为以保证数字可比。
+    # 两条**实测**结论（2026-09-16，RTX 3050 6GB；模型仅 2,159 参数、激活 ~15 MB）：
+    #
+    # 1. `num_workers>0` **更慢**，不是更快。
+    #    实测 30 轮：workers=0 → 162.9s；workers=4 → 177.6s。
+    #    Windows 下 worker>0 走 spawn，进程启动 + 数据序列化开销超过并行收益，
+    #    而 h5 已在内存缓存、读取本来就快。
+    #    （曾误以为 GPU 空转是数据加载造成的 —— 错。真因见 run_parallel.py 的注释：
+    #      是 kernel launch 开销，靠**并发跑多个进程**解决，不是靠 worker。）
+    #
+    # 2. `num_workers` **会改变数值**（不只是速度）。
+    #    DataLoader 的每个 worker 进程有**独立的 torch RNG 状态**，而
+    #    `AapmDataset.__getitem__` 的随机裁块正是从 torch 全局 RNG 取的
+    #    （见 data/dataset.py 中 2026-09-16 的修复说明）。
+    #    实测同 seed=0：workers=0 → 30.8684，workers=4 → 30.8172（差 0.051 dB）。
+    #    ⚠️ 所以「换 workers 重跑」得到的是**不同的一次实验**，不能与旧数字并列。
+    #
+    # 结论：默认 `--workers 0`。要提速请用 experiments/run_parallel.py 并发跑多作业。
     _workers = max(0, int(args.workers))
     _persist = _workers > 0          # 无 worker 时 persistent 无意义
     tr_loader = DataLoader(tr, batch_size=args.batch_size, shuffle=True,

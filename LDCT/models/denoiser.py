@@ -89,7 +89,12 @@ class PRWaveletDenoiser(nn.Module):
             （小波域只处理各子带，图像域残差可补偿整体强度偏移）
     """
 
-    BANDS = ("LL2", "LH2", "HL2", "HH2", "LH1", "HL1", "HH1")
+    # ⚠️ 2026-09-16：由硬编码 7 个（=levels 2）改为**按 levels 动态**，与
+    #    lifting_dwt.MultiLevelLifting.band_names 同一来源，避免两处各自硬编码而漂移。
+    @staticmethod
+    def band_names(levels: int) -> tuple:
+        from models.lifting_dwt import MultiLevelLifting
+        return MultiLevelLifting.band_names(levels)
 
     def __init__(self, levels: int = 2, mid_ch: int = 16, n_conv: int = 2,
                  wavelet: str = "pr", global_residual: bool = False,
@@ -132,7 +137,10 @@ class PRWaveletDenoiser(nn.Module):
                                              bound=self.bound,
                                              synth_mismatch=synth_mismatch)
             self.dwt = self.idwt = None
-        self.heads = nn.ModuleDict({b: BandHead(mid_ch, n_conv) for b in self.BANDS})
+        # 子带名随 levels 变化（levels=2 -> 7 个子带，levels=3 -> 10 个）。
+        # 头数与子带数保持一致，故这里必须用实例级的名字列表。
+        self.bands = self.band_names(levels)
+        self.heads = nn.ModuleDict({b: BandHead(mid_ch, n_conv) for b in self.bands})
 
         if global_residual:
             self.global_branch = nn.Sequential(
@@ -183,7 +191,7 @@ class PRWaveletDenoiser(nn.Module):
         xp, (H, W) = self._pad_to_multiple(x)
 
         bands = self.decompose(xp)
-        cleaned = {b: bands[b] - self.heads[b](bands[b]) for b in self.BANDS}
+        cleaned = {b: bands[b] - self.heads[b](bands[b]) for b in self.bands}
         out = self.reconstruct(cleaned)
 
         if self.global_branch is not None:

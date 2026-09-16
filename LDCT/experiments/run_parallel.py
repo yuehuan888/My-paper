@@ -63,8 +63,14 @@ def main():
             continue
         parts = line.split()
         tag, rest = parts[0], parts[1:]
-        if os.path.exists(os.path.join(HERE, "runs", tag, "results.json")):
-            print(f"[跳过] {tag} 已有结果")
+        # ⚠️ 完成判据必须用 `DONE`，不能只用 `results.json`。
+        #    train.py 先写 results.json（:477）再写 DONE（:490）；若进程恰在两者之间
+        #    被杀，只用 results.json 判断会把**没跑完的**当成已完成而跳过。
+        #    两个都查，缺任一都视为未完成 -> 重跑。
+        rd = os.path.join(HERE, "runs", tag)
+        if os.path.exists(os.path.join(rd, "DONE")) and \
+                os.path.exists(os.path.join(rd, "results.json")):
+            print(f"[跳过] {tag} 已完成")
             continue
         jobs.append((tag, rest))
 

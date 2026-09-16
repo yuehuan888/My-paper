@@ -255,7 +255,20 @@ class MultiLevelLifting(nn.Module):
     是两组独立参数，无法保证任何闭环性质。
     """
 
-    BAND_NAMES = ("LL2", "LH2", "HL2", "HH2", "LH1", "HL1", "HH1")
+    # ⚠️ 2026-09-16：子带名由**硬编码 7 个（=levels 2）**改为按 levels 动态生成。
+    #    此前 `--levels 3` 会 KeyError —— decompose 末尾按 BAND_NAMES 过滤时把
+    #    LH3/HL3/HH3 丢掉，reconstruct 再访问就崩；而 run_ablation.ps1 里恰好
+    #    写了 lvl3 作业，一跑就炸。denoiser.BANDS 是同一处硬编码，同步修。
+    @staticmethod
+    def band_names(levels: int) -> tuple:
+        """levels 级分解的子带名：最粗的 LL，然后从高层往低层列细节。
+
+        顺序与 decompose 的构造顺序一致，保证下游按名字取用时是稳定的。
+        """
+        names = [f"LL{levels}"]
+        for lvl in range(levels, 0, -1):
+            names += [f"LH{lvl}", f"HL{lvl}", f"HH{lvl}"]
+        return tuple(names)
 
     def __init__(self, levels: int = 2, n_taps: int = 3, learnable: bool = True,
                  bound: float = 0.5, synth_mismatch: float = 0.0):
@@ -277,18 +290,17 @@ class MultiLevelLifting(nn.Module):
             LL, LH, HL, HH = self.banks[lvl](cur, normalize=normalize)
             per_level.append((LH, HL, HH))
             cur = LL
-        bands["LL2"] = cur
-        # 级 2 的细节，然后是级 1 的细节
+        bands[f"LL{self.levels}"] = cur
+        # 高层细节先列，然后往低层
         for lvl in range(self.levels, 0, -1):
             LH, HL, HH = per_level[lvl - 1]
-            suffix = str(lvl)
-            bands["LH" + suffix] = LH
-            bands["HL" + suffix] = HL
-            bands["HH" + suffix] = HH
-        return {k: bands[k] for k in self.BAND_NAMES}
+            bands[f"LH{lvl}"] = LH
+            bands[f"HL{lvl}"] = HL
+            bands[f"HH{lvl}"] = HH
+        return {k: bands[k] for k in self.band_names(self.levels)}
 
     def reconstruct(self, bands: dict, normalize: bool = True) -> torch.Tensor:
-        cur = bands["LL2"]
+        cur = bands[f"LL{self.levels}"]
         for lvl in range(self.levels, 0, -1):
             suffix = str(lvl)
             cur = self.banks[lvl - 1].inverse(
