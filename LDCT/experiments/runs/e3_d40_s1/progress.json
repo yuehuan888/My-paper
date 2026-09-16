@@ -1,0 +1,10 @@
+{
+  "tag": "e3_d40_s1",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 5,
+  "best_val_psnr": 3.4025192768163652,
+  "elapsed_min": 3.681131565570831,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T07:34:53.299915+00:00"
+}
