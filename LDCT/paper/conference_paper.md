@@ -397,7 +397,7 @@ the corrected, seed-deterministic pipeline, which reproduces **bit-identically**
 (verified: two runs of the same seed give the same PSNR to ten decimal places).
 
 **(b) The re-run is better powered.** Ten seeds per arm instead of five, which
-tightens the detection floor from **0.136 dB to 0.064 dB** (Fig. 14). Fig. 10
+tightens the detection floor from **0.136 dB to 0.074 dB** (Fig. 14). Fig. 10
 places the two acquisitions side by side; Fig. 13 shows the running mean and
 its 95% CI as seeds accumulate.
 
@@ -609,13 +609,20 @@ than merely prudent: crossing the cliff is irreversible *within training*.
 
 **The default bound is tighter than it needs to be.** (Fig. 11, Fig. 17). Sweeping $\beta$:
 
-| Bound $\beta$ | Drift reached | TEST PSNR | $\Delta$ vs default | $p$ |
-|---|---|---|---|---|
-| **0.5 (default)** | 0.229 | 30.885 | — | — |
-| 1.0 | 0.293 | 30.986 | **+0.101** | **0.038** |
-| 2.0 | 0.371 | 31.036 | **+0.151** | **0.029** |
-| 4.0 | 0.651 | 31.050 | +0.165 | 0.058 |
-| 8.0 | 0.775 | 31.034 | +0.149 | 0.062 |
+| Bound $\beta$ | $n$ | Drift | TEST PSNR | $\Delta$ vs default | $p$ |
+|---|---|---|---|---|---|
+| **0.5 (default)** | 10 | 0.230 | 30.858 | — | — |
+| 1.0 | 3 | 0.293 | 30.986 | **+0.101** | **0.038** |
+| 2.0 | 3 | 0.371 | 31.036 | **+0.151** | **0.029** |
+| 4.0 | 3 | 0.651 | 31.050 | +0.165 | 0.058 |
+| 8.0 | 3 | 0.775 | 31.034 | +0.149 | 0.062 |
+
+> $\Delta$ and $p$ are paired $t$-tests on the **matched three-seed subset**
+> (seeds 0–2), because only the default level was run with more. The default row
+> reports all ten; its 3-seed subset (drift 0.228, 30.885 dB) sits within 0.03 dB
+> of the $n$=10 estimate, so the baseline is not cherry-picked. (Recomputed from
+> `runs/fix_pr_s*` and `runs/fix_bnd*` — the earlier 0.229 / 30.885 row printed
+> the subset under an $n$=10 caption.)
 
 The bound does not clip the drift (utilisation is 46% at $\beta = 0.5$);
 it **limits how far the optimiser searches**, and the drift it reaches rises
@@ -956,7 +963,7 @@ drift 与 PSNR 都**纹丝不动**（3.29 dB）—— 数值崩溃是**悬崖不
 ![fig13](figures/fig13_seed_conv.png)
 
 **图 14 — $n=10$ 的功效分析**（`fig14_power_n10.png`）MDES 随 $n$ 的曲线，
-叠加实测效应。$n=10$ 的检出下限为 **0.064 dB**，比 $n=5$ 的 0.136 dB 收紧一倍。
+叠加实测效应。$n=10$ 的检出下限为 **0.074 dB**，比 $n=5$ 的 0.136 dB 收紧近一倍。
 
 ![fig14](figures/fig14_power_n10.png)
 
