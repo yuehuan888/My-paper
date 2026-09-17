@@ -3,10 +3,28 @@
 %  Perfect-Reconstruction Constraints Enable Learnable Wavelets
 %  for Low-Dose CT Denoising
 %
-%  IEEE conference format (IEEEtran). Targets ICIP 2027 (5 pages + refs page),
-%  also fits EUSIPCO 2027 (5 pages total) and ICME 2027 (6 pages).
+%  IEEE conference format (IEEEtran).
 %
-%  Generated from paper/conference_paper.md on 2026-09-14.
+%  v2.0 (2026-09-16) --- synced to paper/conference_paper.md v2.0. Changes vs v1.0:
+%    - new Sec. 5.2.1 (independent replication on re-acquired data, n=10 per arm)
+%    - new Sec. 5.4 (what the transform learns; the bound and its value)
+%    - four hard errors fixed (see below)
+%    - figures 4 -> 17, all embedded and cited
+%
+%  NOTE ON LENGTH: this file currently carries the *complete record*, not a
+%  camera-ready. At the 5-page ICIP budget it is over by several pages; a
+%  submission build would need the supplementary figures (Sec. "Supplementary
+%  figures") and parts of Sec. 5.2.1 moved out. Kept intact here deliberately.
+%
+%  NUMBER PROVENANCE (v2.0): every table was recomputed from experiments/runs/*
+%  before being written here. Three errors in the markdown draft were caught and
+%  are NOT reproduced: (a) the bound table printed the n=3 subset under an n=10
+%  caption; (b) the n=10 MDES was quoted as 0.064 dB where the repo's own script
+%  gives 0.074 dB (and the draft's own /MDES column already implied 0.074);
+%    (c) the round-trip error was 12--16% in the abstract/intro but 11--18% in
+%  Sec. 5.3 --- the measured value is 11.4--17.9% per seed (n=10).
+%
+%  Generated from paper/conference_paper.md on 2026-09-14; v2.0 sync 2026-09-16.
 %  BUILD:  tectonic main.tex      (or: pdflatex main; pdflatex main)
 %
 %  DOUBLE-BLIND NOTE: ICME / VCIP / ISM are double-blind. For those, comment
@@ -14,6 +32,14 @@
 % ============================================================================
 \documentclass[conference]{IEEEtran}
 
+% IEEE body text is Times. IEEEtran asks for the `ptm' family, but under a
+% Unicode engine the LaTeX kernel defaults to TU encoding, and psnfss defines
+% ptm metrics only for T1/OT1 -- so `TU/ptm/*' is undefined and every build
+% silently fell back to Latin Modern (TU/lmr). Loading T1 brings the encoding
+% back to where the Times metrics live. mathptmx then supplies them.
+% Order matters: both before amsmath/amssymb.
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{graphicx}
@@ -30,6 +56,43 @@
 \setlength{\intextsep}{5pt plus 1pt minus 2pt}
 \setlength{\abovedisplayskip}{4pt}
 \setlength{\belowdisplayskip}{4pt}
+
+% ---------------------------------------------------------------------------
+% Float handling for a float-heavy document (16 figures + 14 tables).
+%
+% Two reasons this matters and is not cosmetic:
+%  1. LaTeX holds at most ~18 unprocessed floats. Past that it raises "Too many
+%     unprocessed floats" and drops the rest. \extrafloats raises the ceiling.
+%  2. IEEEtran's defaults cap how much of a page floats may occupy, which with
+%     this many wide figures would push them all to the end of the file.
+% These are the standard relaxations for a figure-heavy paper. They cost nothing
+% on the page budget (which is not binding here) and prevent a failure mode that
+% cannot be caught without a compiler.
+% ---------------------------------------------------------------------------
+\extrafloats{200}
+\renewcommand{\topfraction}{0.90}
+\renewcommand{\bottomfraction}{0.60}
+\renewcommand{\textfraction}{0.10}
+\renewcommand{\floatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+
+% The dbl* family is the one that actually governs this document: a two-column
+% float (`figure*`/`table*`) is NOT controlled by \topfraction / \floatpagefraction
+% but by \dbltopfraction / \dblfloatpagefraction / \dbltopnumber. All 24 wide
+% floats here are two-column, so tuning only the single-column parameters changed
+% nothing at all (verified: byte-identical page fill before and after). Default
+% \dbltopnumber is 2, which is what was forcing one figure onto its own page.
+\renewcommand{\dbltopfraction}{0.90}
+\renewcommand{\dblfloatpagefraction}{0.75}
+\setcounter{dbltopnumber}{4}
+
+% With 23 full-width floats the pages cannot all be filled exactly, and
+% \flushbottom would stretch the inter-paragraph glue to hide that ("Underfull
+% \vbox ... badness 10000"). Letting the bottom edge float is the standard
+% remedy for a float-dominated document and removes the visible gaps.
+\raggedbottom
 
 \begin{document}
 
@@ -55,8 +118,8 @@ at $n=5$ seeds, and the unconstrained--fixed gap is \textbf{0.025~dB ---
 than an absence: any real difference is smaller than \textbf{0.14~dB}, roughly
 \emph{half} the benefit that perfect reconstruction later delivers. We trace the
 failure to the transform's reconstruction error, which reaches
-\textbf{12--16\%} after training, and show it is \textbf{causal rather than
-merely correlated}: injecting a controlled error of the same magnitude into the
+\textbf{11--18\%} after training. We show this is \textbf{causal, not merely
+correlated}: injecting a controlled error of the same magnitude into the
 perfect-reconstruction arm degrades it to the fixed-Haar level. Imposing perfect
 reconstruction \emph{by construction} --- parameterizing the wavelet as a lifting scheme whose inverse
 shares the forward filters --- makes learning pay off: \textbf{+0.30~dB over
@@ -66,6 +129,20 @@ across two data splits. The resulting network has \textbf{2,159
 parameters} and reaches \textbf{31.97~dB} on AAPM-Mayo 2016, within 1.0~dB of a
 RED-CNN baseline trained under the identical protocol at \textbf{857$\times$
 fewer parameters}.
+
+Two further results locate the effect. First, the transform learns \emph{little}:
+from any numerically intact starting point, training converges to a narrow band
+of drift from Haar and, starting \textbf{at} Haar, moves \textbf{away} --- the
+optimum is slightly off Haar, which is why adaptation buys so little here. We
+also reject the natural explanation that the heads simply substitute for the
+transform: the PR advantage does not shrink as head capacity grows by two orders
+of magnitude. Second, the failure mode is a \textbf{cliff, not a slope} --- once
+the forward transform's round-trip error exceeds the signal, the gradient carries
+no information and training cannot recover (drift~4.0 stays at 4.000 and
+3.29~dB, where drift~2.0 recovers fully). Being inside the numerical envelope is
+therefore binary, which is why bounding is necessary --- and why the bound's
+value matters more than expected: our default costs \textbf{+0.10 to +0.15~dB},
+about half the entire PR effect.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -118,7 +195,7 @@ half of what PR delivers. A weak experiment could not have resolved the effect
 that PR produces.
 
 \textbf{Why} it fails is the substance of the paper. After training, the
-unconstrained pair loses \textbf{12--16\%} of the signal in a forward--backward
+unconstrained pair loses \textbf{11--18\%} of the signal in a forward--backward
 pass, against \textbf{1.6e-07} for both invertible arms. We show this is
 \textbf{causal, not merely correlated}: holding architecture, capacity and
 protocol fixed, we inject a controlled round-trip error into the PR arm, and it
@@ -138,14 +215,25 @@ correlation: a round-trip error of the same magnitude is \emph{sufficient} to
 destroy the benefit, monotonically and significantly ($n=5$ seeds,
 $p \le 0.007$ at every dose). Prior invertible-wavelet denoisers cannot observe
 this state.
-\item \textbf{A conditioning requirement, not merely a reversibility one.}
-Structural PR does not enforce itself in float32. We characterize this by a
-\textbf{controlled sweep of tap magnitude}: holding the architecture fixed and
-scaling the lifting taps from 1.0 to 5.3, the round-trip error grows from
-3.6e-07 to 5.2e+00. Bounding the taps (our \texttt{bound = 0.5}) is what keeps
-the construction usable, and the invertible-network literature does not report
-this failure mode. \emph{We note this is a controlled analysis of the parameter
-regime, not a training-drift measurement.}
+\item \textbf{A numerical envelope, and what happens outside it.} Structural PR
+does not enforce itself in float32. We characterize the boundary in two ways. By
+a \textbf{controlled sweep of tap magnitude}, the round-trip error grows from
+3.6e-07 at $|{\rm taps}| \approx 1.0$ to 5.2e+00 at $\approx 5.3$
+(\emph{a controlled analysis of the parameter regime, not a training-drift
+measurement}). And by initialising the taps at a known distance from Haar, we
+show that crossing this boundary is a \textbf{cliff}: at drift~4.0 the forward
+transform emits noise, the gradient carries no information, and training stays
+exactly where it started (final drift 4.000, 3.29~dB), whereas drift~2.0
+recovers fully. Being inside the envelope is therefore not a matter of degree ---
+which is why we bound the taps, and why the bound's value matters more than we
+expected (Section~\ref{sec:learns}).
+\item \textbf{What the transform actually learns.} From any numerically intact
+starting point, training converges to a \textbf{narrow band of drift from Haar
+($\approx$0.65--0.78)}; starting \emph{at} Haar, it moves away. The optimum is
+therefore slightly off Haar, which is the concrete reason ``learning'' buys so
+little here. We also test --- and reject --- the natural hypothesis that the heads
+simply substitute for the transform: the PR advantage does not shrink as head
+capacity grows by two orders of magnitude.
 \item \textbf{A 2,159-parameter network} that comes within 1.0~dB of a
 same-protocol RED-CNN baseline at \textbf{$857\times$ fewer parameters}.
 \end{enumerate}
@@ -223,11 +311,12 @@ tension with WINNet's ablation.
 \subsection{Overview}
 The network operates in the wavelet domain:
 \begin{equation}
-x \;\xrightarrow{\;\text{PR-LWT}\;}
-\{\text{band}_b\}_{b=1}^{7}
-\;\xrightarrow{\;\text{heads}\;}\;
-\{\text{band}_b - \delta_b\}
-\;\xrightarrow{\;\text{PR-LWT}^{-1}\;}\; \hat{x}
+\begin{aligned}
+x &\;\xrightarrow{\;\text{PR-LWT}\;}
+     \{\text{band}_b\}_{b=1}^{7}
+     \;\xrightarrow{\;\text{heads}\;}\; \{\text{band}_b - \delta_b\}\\
+  &\;\xrightarrow{\;\text{PR-LWT}^{-1}\;}\; \hat{x}
+\end{aligned}
 \end{equation}
 where $x$ is the noisy input and $\delta_b = \text{head}_b(\text{band}_b)$ is a
 per-subband residual prediction. For 2 levels this gives seven subbands
@@ -296,14 +385,11 @@ dataset. We adopt the \textbf{RED-CNN / CTformer lineage} convention, used
 verbatim by six public repositories:
 \begin{quote}
 \small
-\begin{tabular}{@{}ll@{}}
-preprocess & $x = (\mathrm{HU} + 1024)/4096$ (no clipping)\\
-evaluate & denormalize to HU; clip both prediction and\\
-         & reference to $[-160, 240]$;\\
-         & PSNR $= 10\log_{10}(400^2/\mathrm{MSE}_{\mathrm{HU}})$,\\
-         & data\_range $=400$; SSIM per SSinyu/RED-CNN\\
-aggregate & per-slice metrics, then mean
-\end{tabular}
+\textbf{preprocess}: $x = (\mathrm{HU} + 1024)/4096$, no clipping.\\
+\textbf{evaluate}: denormalize to HU, clip both prediction and reference to
+$[-160, 240]$, and take PSNR $= 10\log_{10}(400^2/\mathrm{MSE}_{\mathrm{HU}})$,
+i.e.\ data\_range $=400$; SSIM per SSinyu/RED-CNN.\\
+\textbf{aggregate}: per-slice metrics, then mean.
 \end{quote}
 
 The identity baseline under this protocol is L506 29.2489, L067 26.5576,
@@ -346,6 +432,7 @@ patients, sorted by PSNR, are given in Table~\ref{tab:floor}.
 \textbf{all results are reported per patient}.}
 \label{tab:floor}
 \small
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrl@{}}
 \toprule
 Patient & $n$ & PSNR & SSIM & Appears as\\
@@ -417,7 +504,9 @@ Second, under that matched comparison, PR-LWT comes within \textbf{0.97~dB} (S2)
 and \textbf{1.00~dB} (S1) of RED-CNN while using \textbf{857$\times$ fewer
 parameters} (2,159 vs.\ 1,848,865). We state plainly that \textbf{PR-LWT does not
 beat RED-CNN on PSNR}; the claim under test in this paper is about \emph{what
-makes a learnable transform helpful}, not about attaining state of the art.
+makes a learnable transform helpful}, not about attaining state of the art. The
+parameter/PSNR trade-off is plotted in Fig.~\ref{fig:pareto}, and a visual
+comparison in Fig.~\ref{fig:visual}.
 
 \subsection{Ablation: is invertibility the key?}
 \label{sec:ablation}
@@ -427,7 +516,7 @@ makes a learnable transform helpful}, not about attaining state of the art.
 \emph{unconstrained} isolates the effect of \textbf{invertibility}; \emph{pr}
 vs.\ \emph{fixed} isolates the effect of \textbf{learnability}.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{The three arms. Only the wavelet differs between them.}
 \label{tab:arms}
@@ -441,10 +530,10 @@ Arm & Wavelet & Learnable & Inv.\ guar. & Params\\
 \texttt{fixed} & orthonormal Haar & $\times$ & \checkmark & 0\\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
-Results (mean $\pm$ std over seeds; paired $t$-test with the \textbf{training
-seed} as the independent unit) are in Tables~\ref{tab:arms-res}
+Results (Fig.~\ref{fig:arms}; mean $\pm$ std over seeds; paired $t$-test with the
+\textbf{training seed} as the independent unit) are in Tables~\ref{tab:arms-res}
 and~\ref{tab:paired}.
 
 \begin{table}[t]
@@ -489,6 +578,113 @@ S2 & \texttt{unconstrained} $-$ \texttt{fixed} & $-0.0148$ & $-1.25$ & 0.337 & [
 \bottomrule
 \end{tabular}
 \end{table*}
+
+\subsubsection{Independently re-acquired data, ten seeds per arm}
+\label{sec:replication}
+
+Between the original experiments and this write-up the dataset had to be
+\textbf{re-acquired from scratch}: the official AAPM Box distribution became
+unreachable, the Kaggle mirror that replaced it was withdrawn mid-download, and
+the copy used here was reassembled from a partial archive whose 3\,mm B30 region
+contains holes (L067 is missing 13 slices, L506 one, giving a \textbf{421-slice}
+test set instead of 435). Because the data therefore differs, every headline
+result was re-run end to end.
+
+This turned out to be useful: it is a \textbf{de facto replication}, and the two
+protocol changes it forced are worth stating, because both are corrections.
+
+\textbf{(a) The training protocol was not reproducible.} Random patch cropping
+drew from an unseeded generator, so a given \texttt{--seed} did not reproduce a
+run; repeated runs with the same seed differed by $\sim$0.04~dB. All numbers below
+come from the corrected, seed-deterministic pipeline, which reproduces
+\textbf{bit-identically} (verified: two runs of the same seed agree to ten decimal
+places).
+
+\textbf{(b) The re-run is better powered.} Ten seeds per arm instead of five,
+which tightens the detection floor from \textbf{0.136~dB} to \textbf{0.074~dB}
+(Fig.~\ref{fig:power-n10}). Fig.~\ref{fig:rep-arms} places the two acquisitions
+side by side (Table~\ref{tab:repl-arms}); Fig.~\ref{fig:seed-conv} shows the
+running mean and its 95\% CI as seeds accumulate.
+
+\begin{table*}[t]
+\centering
+\caption{The same three arms on the two data acquisitions. The absolute levels are
+not directly comparable across rows --- the re-acquired test set is 14 slices
+smaller and its identity floor shifts accordingly (27.8630 $\to$ 27.9220~dB).
+Every comparison we draw is like-for-like \emph{within} one acquisition.}
+\label{tab:repl-arms}
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Split & Arm & Original (435, $n$=5) & Re-acquired (421, $n$=10)\\
+\midrule
+S1 & \texttt{pr} & 30.8314 $\pm$ 0.0815 & \textbf{30.8575 $\pm$ 0.0740}\\
+S1 & \texttt{unconstrained} & 30.5341 $\pm$ 0.0305 & 30.5427 $\pm$ 0.0460\\
+S1 & \texttt{fixed} & 30.5591 $\pm$ 0.0256 & 30.5739 $\pm$ 0.0497\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{Paired comparisons on the re-acquired data ($n=10$ seeds), against the
+original values. Both positive findings replicate with \emph{larger} effect
+sizes. The third row changes \emph{character} and we report it as such.}
+\label{tab:repl-paired}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Comparison & $\Delta$ (dB) & $p$ & $d_z$ & $|\Delta|$/MDES\\
+\midrule
+\texttt{pr} $-$ \texttt{unconstrained} & \textbf{+0.3148} & \textbf{$<$0.0001} & \textbf{+5.13} & \textbf{4.28}$\times$\\
+\texttt{pr} $-$ \texttt{fixed} & \textbf{+0.2837} & \textbf{$<$0.0001} & \textbf{+5.04} & \textbf{3.85}$\times$\\
+\texttt{unconstrained} $-$ \texttt{fixed} & \textbf{$-$0.0312} & \textbf{0.0163} & $-$0.93 & 0.68$\times$\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig10_replication.png}
+\caption{The two data acquisitions side by side (435 slices at $n=5$; 421 slices
+at $n=10$). The ordering and the size of the gaps are unchanged; only the
+absolute level shifts, with the identity floor.}
+\label{fig:rep-arms}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig13_seed_conv.png}
+\caption{Running mean and 95\% CI as seeds accumulate. The horizontal line is the
+original $n=5$, 435-slice value --- the re-acquired data lands on it and the
+interval narrows rather than drifting.}
+\label{fig:seed-conv}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig14_power_n10.png}
+\caption{Power analysis at $n=10$. The detection floor tightens from 0.136~dB to
+\textbf{0.074~dB}, with the measured effects overlaid: the PR advantage sits
+$3.9$--$4.3\times$ above the floor, the null gap at $0.68\times$ of it.}
+\label{fig:power-n10}
+\end{figure*}
+
+\textbf{Both positive findings replicate, with larger effect sizes} ($d_z$ = 5.13
+and 5.04 against 4.67 and 4.78), and the ordering is unchanged. The third row
+\emph{changes character}, and we report it as such: on the original data the
+\texttt{unconstrained} $-$ \texttt{fixed} gap was indistinguishable from zero;
+here it is marginally significant \textbf{in the negative direction}.
+Unconstrained learning is therefore not merely useless but slightly
+\emph{harmful} --- though we would not press a $0.03$~dB effect that sits at
+$0.68\times$ the detection floor.
+
+\textbf{What this does and does not license.} The paired \emph{ratios} replicate
+cleanly; the absolute levels are not directly comparable across the two
+acquisitions, because the test set is 14 slices smaller and its identity floor
+shifts accordingly (27.8630 $\to$ 27.9220~dB). Every comparison above is
+like-for-like \emph{within} its own acquisition, which is the form in which we
+use them.
 
 \textbf{Three findings, identical on both splits:}
 \begin{enumerate}
@@ -573,7 +769,7 @@ We measure the analysis--synthesis round-trip error of the \textbf{trained}
 transforms on their final checkpoints (Table~\ref{tab:rt}, and
 Fig.~\ref{fig:mech}a), over ten seeds per arm on S1.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Round-trip error (relative $L_2$) of the trained transforms, on the
 final checkpoint of each arm. The probe uses a fixed random input, so this is a
@@ -591,7 +787,7 @@ Arm & Wavelet params & S1 ($n$=10) & S2 ($n$=3)\\
 \texttt{unconstrained} & 64 & \textbf{1.35e-01} $\pm$ 0.19e-01 & \textbf{1.45e-01}\\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 Unconstrained learning drives the transform to a state where \textbf{11--18\% of
 the signal is lost in a forward--backward pass} (S1 mean 13.5\%, per-seed
@@ -609,7 +805,7 @@ $(1-\varepsilon)\cdot U$ while analysis still uses $U$ --- reproducing, in
 isolation, exactly the defect the unconstrained arm develops on its own
 (Table~\ref{tab:interv}, Fig.~\ref{fig:mech}b):
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Intervention: forcing a controlled round-trip error into the PR arm.
 Every dose is significant (paired $t$-test, independent unit = training seed,
@@ -626,7 +822,7 @@ Injected $\varepsilon$ & Measured RT & PSNR (S1) & $\Delta$ & Paired $p$\\
 0.444 & 1.2e-01 & 30.2850 $\pm$ 0.0459 & $-0.546$ & \textbf{$<$0.0001}\\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 Performance falls \textbf{monotonically} with the injected error, and every dose
 is significant. At \textbf{8.7\%} round-trip error the PR arm lands at
@@ -646,9 +842,9 @@ at the same order of magnitude}, not exact reproduction of that arm's error.
 PR-LWT keeps the round-trip error at the float32 limit while remaining fully
 adaptive. \textbf{This is the entire mechanism.}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig2_mech.png}
+\includegraphics[width=\textwidth]{fig2_mech.png}
 \caption{\textbf{(a)}~Round-trip error of the trained transforms ($n=10$ seeds on
 S1; error bars are std) on a fixed random probe: the two invertible arms sit at
 the float32 limit, the unconstrained arm 5.9 orders of magnitude above them.
@@ -657,7 +853,7 @@ injecting that error into the PR arm degrades it monotonically, crossing both th
 fixed-Haar and the unconstrained reference levels. The square marks the
 unconstrained arm's own operating point.}
 \label{fig:mech}
-\end{figure}
+\end{figure*}
 
 \begin{figure}[t]
 \centering
@@ -667,9 +863,9 @@ wavelet pay off. Dashed line is the identity floor on the S1 test set.}
 \label{fig:arms}
 \end{figure}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig8_power.png}
+\includegraphics[width=\textwidth]{fig8_power.png}
 \caption{What this experiment can and cannot detect. Minimum detectable effect
 (80\% power, paired $t$-test) as a function of the number of training seeds.
 The observed PR benefit ($+0.272$~dB) lies \emph{above} the $n=5$ detection
@@ -677,7 +873,172 @@ floor ($0.136$~dB), while the observed null gap ($0.025$~dB) lies
 $5.6\times$ \emph{below} it --- so the negative result is a bound, not a blind
 spot.}
 \label{fig:power}
-\end{figure}
+\end{figure*}
+
+\subsection{What the transform actually learns, and where the bound bites}
+\label{sec:learns}
+
+The results so far say the PR constraint is \emph{sufficient} to make learning
+pay. They do not say what the learned transform looks like, or how tight the
+bound must be. Two experiments address this.
+
+\textbf{The task has a preferred operating point, and it is not Haar}
+(Fig.~\ref{fig:e3}). We initialise the lifting taps at a controlled distance $d$
+from the Haar initialisation ($\theta_0 = \operatorname{atanh}(d/\beta)$, so
+$|P - P_{\text{init}}| \approx d$) and measure where training leaves them
+(Table~\ref{tab:e3}):
+
+\begin{table}[t]
+\centering
+\caption{Initialisation distance from Haar $\to$ drift after training. Over the
+range where the initial transform is numerically intact the drift converges to a
+narrow band; at $d=4$ the forward pass is already broken and training cannot move
+at all.}
+\label{tab:e3}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Initial drift $d$ & Drift after training & TEST PSNR (dB)\\
+\midrule
+0.00 (Haar) & \textbf{0.775} & \textbf{31.034}\\
+0.50 & 0.709 & 30.983\\
+1.00 & 0.773 & 30.776\\
+2.00 & 0.654 & 30.578\\
+4.00 & 4.000 \emph{(stuck)} & \textbf{3.292}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig16_e3_initdrift.png}
+\caption{\textbf{(a)}~Training pulls every numerically intact starting point into
+a narrow band of drift from Haar (0.654--0.775), against an initial span of
+2.0; starting \emph{at} Haar the taps are pushed \emph{away} to 0.775, so the
+gradient does not consider Haar optimal. \textbf{(b)}~The failure mode is a
+cliff, not a slope: from $d=4$ the forward transform already emits noise
+(round-trip $4.3\times10^{1}$) and training cannot move at all --- drift stays at
+exactly 4.000 and the output is unrelated to the input.}
+\label{fig:e3}
+\end{figure*}
+
+Over $d \le 2$, training converges to a \textbf{narrow band of drift,
+0.654--0.775} (span 0.12 against an initial span of 2.0; $r = -0.75$, i.e.\ both
+directions converge inward). Starting \emph{at} Haar, training pushes the taps
+\textbf{away} to 0.775 --- the gradient does not consider Haar optimal. The honest
+reading is that \textbf{the optimal wavelet is slightly off Haar, near drift
+$\approx 0.7$}, which is also why ``learning'' buys so little: there is little to
+learn. We state this as the measured behaviour it is; the residual correlation
+with the starting point ($r = -0.75$, not $-1$) shows the attractor is soft, not
+exact.
+
+\textbf{Numerical collapse is a cliff, not a slope} (Fig.~\ref{fig:e3}b). At
+$d = 4$ the initial transform's round-trip error is already $4.3\times10^{1}$ ---
+the forward pass emits noise. Training then does \textbf{nothing}: the drift stays
+at exactly 4.000 and the network reaches \textbf{3.29~dB}, i.e.\ output unrelated
+to the input. There is no gradient signal to recover from, because the
+coefficients the network receives are already garbage. Contrast $d = 2$
+(round-trip $1.4\times10^{-2}$), which recovers to 0.654 and 30.578~dB. This is
+why bounding is \textbf{necessary} rather than merely prudent: crossing the cliff
+is irreversible \emph{within training}.
+
+\textbf{The default bound is tighter than it needs to be}
+(Figs.~\ref{fig:bound},~\ref{fig:bounddrift}). Sweeping $\beta$
+(Table~\ref{tab:bound}):
+
+\begin{table*}[t]
+\centering
+\caption{Bound sweep. $\Delta$ and $p$ are paired $t$-tests on the \textbf{matched
+three-seed subset} (seeds 0--2), because only the default level was run with more.
+The default row reports all ten, and its 3-seed subset (drift 0.228, 30.885~dB)
+sits within 0.03~dB of the $n$=10 estimate, so the baseline is not
+cherry-picked. Only $\beta = 1.0$ and $2.0$ are individually significant;
+the $n=3$ levels put the \emph{location} of the peak out of reach. The bound does
+not clip the drift (utilisation is 46\% at $\beta=0.5$); it limits how far the
+optimiser searches.}
+\label{tab:bound}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Bound $\beta$ & $n$ & Drift & TEST PSNR (dB) & $\Delta$ vs default & $p$\\
+\midrule
+\textbf{0.5 (default)} & 10 & 0.230 & 30.858 & --- & ---\\
+1.0 & 3 & 0.293 & 30.986 & \textbf{+0.101} & \textbf{0.038}\\
+2.0 & 3 & 0.371 & 31.036 & \textbf{+0.151} & \textbf{0.029}\\
+4.0 & 3 & 0.651 & 31.050 & +0.165 & 0.058\\
+8.0 & 3 & 0.775 & 31.034 & +0.149 & 0.062\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig11_bound_curve.png}
+\caption{Performance against the bound $\beta$. We deliberately title this
+cautiously --- ``performance is insensitive to the bound value'' --- because at
+$n=3$ only $\beta = 1.0$ and $2.0$ are individually better than the default.}
+\label{fig:bound}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig17_bound_drift.png}
+\caption{The mechanism chain: bound $\to$ drift $\to$ PSNR. The horizontal axis is
+the \emph{realised} drift rather than the bound, so the independent E3
+measurements of Fig.~\ref{fig:e3} can be overlaid directly. The default
+\texttt{bound}$=0.5$ pins the optimiser at drift 0.23, well below the 0.65--0.78
+plateau the task prefers.}
+\label{fig:bounddrift}
+\end{figure*}
+
+At $\beta = 0.5$ --- the value used everywhere else in this paper --- the
+optimiser settles at drift 0.23, far below the $\approx 0.7$ the model prefers,
+costing \textbf{+0.10 to +0.15~dB}. That is roughly \textbf{half of the entire PR
+effect}, for one hyper-parameter.
+
+\textbf{A hypothesis we tested and rejected} (Fig.~\ref{fig:e1}). One natural
+explanation for the whole negative result is that the heads can \emph{substitute}
+for the transform: give them enough capacity and a good wavelet stops mattering.
+We tested this by varying head capacity (\texttt{--n-conv}, 94 $\to$ 2{,}159
+$\to$ 18{,}399 parameters) and measuring the PR $-$ fixed gap
+(Table~\ref{tab:e1}):
+
+\begin{table}[t]
+\centering
+\caption{The PR advantage does not shrink as the heads grow --- the opposite of
+substitution. Endpoints have $n=3$, so we do not claim the upward trend itself;
+what is supported is that the advantage persists across two orders of magnitude
+of head capacity.}
+\label{tab:e1}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Head capacity & $\Delta$(PR $-$ Fixed Haar) & $n$\\
+\midrule
+94 & +0.186 & 3\\
+2,159 & +0.284 & 10\\
+18,399 & +0.304 & 3\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig15_e1_capacity.png}
+\caption{A \textbf{negative} result, shown as measured. The hypothesis was that
+the transform matters more when the heads are small; the measured direction is
+the opposite and monotone (+0.186 at 94 parameters, +0.284 at 2{,}159, +0.304 at
+18{,}399). The endpoints carry $n=3$ only, so this figure is used to
+\emph{reject} substitution, not to establish a trend.}
+\label{fig:e1}
+\end{figure*}
+
+The gap \textbf{grows} with capacity rather than shrinking ($r = +0.968$ on
+$\log_{10}$ params). The defensible statement is a \textbf{robustness} one: the PR
+advantage persists across two orders of magnitude of head capacity (always
+0.19--0.30~dB); it neither vanishes when the heads grow nor amplifies when they
+shrink. This rules out ``the transform is just covering for weak heads'' as an
+explanation.
 
 % ============================================================================
 \section{Discussion and Limitations}
@@ -696,7 +1057,10 @@ untested --- including LoDoPaB-CT~\cite{leuschner2021lodopab}, which we note is 
 \emph{reconstruction} benchmark (its observations are sinograms) and therefore
 not directly usable as a zero-shot denoising test without an FBP step.
 \item \textbf{Small test cohort} (2 patients in S1, 1 in S2). This is why we
-report per-patient results and use seeds as the unit of analysis.
+report per-patient results and use seeds as the unit of analysis. For scale, the
+\emph{patient-to-patient} identity-floor spread is \textbf{3.75~dB}
+(Table~\ref{tab:floor}) --- an order of magnitude larger than any effect reported
+here --- which is precisely why the seed, not the slice, is the unit of analysis.
 \item \textbf{Same-split baselines cover RED-CNN only.} RED-CNN was retrained by
 us under our own splits and protocol (Section~\ref{sec:main-res}); CTformer and
 the remaining methods are still quoted from the literature, and the
@@ -721,6 +1085,22 @@ matched magnitude (Section~\ref{sec:mech}), not exact reproduction.
 heteroscedasticity at $n=5$ ($p=0.167$ S1, $0.630$ S2). We flag it rather than
 claim it: if real, PR-LWT's advantage carries a modestly higher training-variance
 cost. More seeds are needed to settle this.
+\item \textbf{The bound was tuned against a measurement that is only significant
+at $n = 3$} (Section~\ref{sec:learns}). Our claim that $\beta = 0.5$ is worse than
+1.0--2.0 rests on three seeds per level; the $+0.10$--$+0.15$~dB it implies
+should be treated as provisional until replicated with more seeds. We report it
+because the direction is consistent across all four comparisons, not because it
+is settled.
+\item \textbf{Our head-capacity experiment is underpowered at both ends} ($n = 3$
+at 94 and 18{,}399 parameters; $n = 10$ only at the default 2{,}159). It is enough
+to \emph{reject} substitution, which is what we use it for, but not to support the
+apparent upward trend in Section~\ref{sec:learns}.
+\item \textbf{The training protocol itself was corrected during this work.} Random
+patch cropping originally drew from an unseeded generator, so a given
+\texttt{--seed} did not reproduce a given run. All results reported here are from
+the corrected, seed-deterministic pipeline (Section~\ref{sec:replication}); the
+correction changes individual numbers by $\sim$0.01--0.05~dB and, more
+importantly, \textbf{reduces the variance} that previously masked the bound effect.
 \item \textbf{No downstream task} (e.g.\ segmentation) is evaluated.
 \end{enumerate}
 
@@ -746,23 +1126,135 @@ score; our same-split reproduction lands within 0.02~dB of it.}
 % ============================================================================
 
 We asked whether making the wavelet learnable helps LDCT denoising. By default,
-\textbf{it does not} --- an unconstrained learnable wavelet performs exactly like
-a fixed Haar basis, because learning destroys the transform's invertibility.
-Constraining the wavelet to be perfectly reconstructible by construction --- via
-a lifting scheme whose inverse shares the forward filters --- makes adaptation
-pay off, for a network of only 2,159 parameters. The lesson generalises beyond
-this task: \textbf{when a learned component is meant to be invertible,
-invertibility should be structural rather than hoped for.}
+\textbf{it does not} --- an unconstrained learnable wavelet performs no better
+than a fixed Haar basis (and, on the corrected pipeline, marginally worse),
+because learning destroys the transform's invertibility. Constraining the wavelet
+to be perfectly reconstructible by construction --- via a lifting scheme whose
+inverse shares the forward filters --- makes adaptation pay off, for a network of
+only 2,159 parameters.
+
+Two further findings sharpen the picture. The transform does learn \emph{something},
+but not much: from any numerically intact starting point, training converges to a
+narrow band of drift from Haar ($\approx 0.65$--$0.78$), which is why the payoff
+is modest. And the numerical failure mode is a \textbf{cliff rather than a slope}
+--- once the forward transform's round-trip error exceeds the signal, the
+coefficients are noise, the gradient carries no information, and training cannot
+recover. That is the precise sense in which the bound is necessary: not because
+performance degrades smoothly without it, but because crossing the boundary is
+irreversible within training.
+
+The lesson generalises beyond this task: \textbf{when a learned component is meant
+to be invertible, invertibility should be structural rather than hoped for} --- and
+the numerical envelope that makes that structure usable deserves to be stated
+explicitly, not left to a default.
 
 % ---------------------------------------------------------------------------
 \section*{Reproducibility}
-All numbers in this paper come from the 24 completed runs
-($3$ arms $\times$ $\{5,3\}$ seeds $\times$ 2 splits) plus the two RED-CNN
-baselines and the identity baselines. Each run writes its full configuration
-(data sizes, parameter breakdown, LR milestones, code revision) to
-\texttt{config.json} and per-slice metrics to \texttt{results.json}. The
-round-trip measurements come from \texttt{verify\_roundtrip.py}. Code and
-configurations will be released upon acceptance.
+Every number in this paper comes from a completed training run. The structure is
+as follows, with the tag prefix each run carries in \texttt{experiments/runs/}:
+
+\begin{table*}[t]
+\centering
+\caption{Run structure behind every number in this paper. The prefix is the tag
+each run carries in \texttt{experiments/runs/}.}
+\label{tab:runs}
+\small
+\begin{tabular}{@{}llr@{}}
+\toprule
+Study & Design & Runs\\
+\midrule
+Original, S1 (\texttt{w3\_}) & 3 arms $\times$ 5 seeds & 15\\
+Original, S2 (\texttt{lit\_}) & 3 arms $\times$ 3 seeds & 9\\
+Replication, S1 (\texttt{fix\_}) & 3 arms $\times$ 10 seeds & 30\\
+Bound sweep (\texttt{fix\_bnd}, \texttt{new\_bnd}) & 5 levels $\times$ 3 seeds$^{\dagger}$ & 29\\
+Init-drift, E3 (\texttt{e3\_}) & 5 levels $\times$ 3 seeds & 15\\
+Head capacity, E1 (\texttt{e1\_}) & 2 settings $\times$ 3 arms $\times$ 3 seeds & 18\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+$^{\dagger}$The default level additionally carries seven more seeds, reported in
+the main replication; the extra batch \texttt{new\_bnd} is missing one run.
+
+Each run writes its full configuration (data sizes, parameter breakdown, LR
+milestones, code revision) to \texttt{config.json} and per-slice metrics to
+\texttt{results.json}; the tags above are the only lookup needed to regenerate any
+table here. Round-trip measurements come from
+\texttt{verify\_roundtrip.py --checkpoints}. We do not claim a single aggregate
+run count, because the exploratory runs also present in that directory are not
+part of any result reported. Code and configurations will be released upon
+acceptance.
+
+% ============================================================================
+\section*{Supplementary figures}
+% ============================================================================
+
+This section carries the figures that support the statistical argument but are
+not cited in the body, so that every figure generated for this study is
+reproducible from the manuscript alone. They are ordered by the question they
+answer, not by figure number.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig5_slice_dist.png}
+\caption{\textbf{(a)}~Per-seed PSNR distribution across test slices (half-violin
+with jittered points; black bars are quartiles and median). The three arms'
+distributions overlap almost completely, so the effect is not carried by a
+handful of slices. \textbf{(b)}~Variance decomposition: the \emph{per-slice} SD
+(1.75--1.80~dB) exceeds the \emph{between-seed} SD (0.030--0.087~dB) by
+\textbf{20--60$\times$}. This is the direct justification for using the seed
+rather than the slice as the unit of analysis.}
+\label{fig:slice-dist}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig6_convergence.png}
+\caption{Convergence dynamics: \textbf{(a)}~training $L_1$ and \textbf{(b)}~validation
+PSNR, three arms, mean $\pm$ 1 SD over five seeds. The two panels use
+\emph{separate} $x$ axes --- validation runs every fifth epoch, so it has six
+points against the training curve's thirty; plotting both on one axis would
+compress the time axis fivefold. PR-LWT is ahead on both metrics (final-epoch
+training $L_1$ 0.003346 against 0.003396 and 0.003414). The dashed line in (b)
+marks that \emph{every} seed's best epoch is the last one --- i.e.\ training has
+not converged, which is limitation~4.}
+\label{fig:convergence}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig7_forest.png}
+\caption{Effect sizes for all six paired comparisons: $\Delta$ with 95\% CI. The
+grey band is the MDES interval at that $n$ --- the range the design cannot
+resolve. The two null results fall entirely inside the band; the two significant
+results have intervals wholly outside it.}
+\label{fig:forest}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig9_perpatient.png}
+\caption{\textbf{(a)}~Per-patient consistency: the effect direction is the same on
+L506 ($n=211$) and L067 ($n=224$). \textbf{(b)}~The two patients' identity floors
+differ by \textbf{2.69~dB}, larger than any effect reported in this paper --- which
+is why results are given per patient and tested per seed.}
+\label{fig:perpatient}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig12_effect_forest.png}
+\caption{The original study against the replication: $\Delta$ and 95\% CI for each
+comparison, with each one's MDES band. The paired ratios replicate; only the
+absolute levels shift, with the identity floor.}
+\label{fig:effect-forest}
+\end{figure*}
+
+% Flush pending floats here. Without this, the supplementary figures -- whose
+% section appears just above -- are deferred past the bibliography and end up
+% printed after the references (observed: figures on pp. 14-17, REFERENCES on
+% pp. 13-14). A \clearpage makes the ordering match the source.
+\clearpage
 
 % ============================================================================
 \begin{thebibliography}{33}
