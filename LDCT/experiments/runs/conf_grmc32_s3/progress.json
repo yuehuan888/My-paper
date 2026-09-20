@@ -1,0 +1,10 @@
+{
+  "tag": "conf_grmc32_s3",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 30.705229456153624,
+  "elapsed_min": 11.053752326965332,
+  "peak_vram_mb": 657.7,
+  "updated": "2026-09-20T06:32:19.934477+00:00"
+}

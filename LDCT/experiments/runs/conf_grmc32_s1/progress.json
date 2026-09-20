@@ -1,0 +1,10 @@
+{
+  "tag": "conf_grmc32_s1",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 85,
+  "best_val_psnr": 30.709728574613788,
+  "elapsed_min": 10.659626726309458,
+  "peak_vram_mb": 657.7,
+  "updated": "2026-09-20T06:09:20.291062+00:00"
+}

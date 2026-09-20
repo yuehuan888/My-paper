@@ -1,0 +1,10 @@
+conf_gr_s0    --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+conf_grmc32_s0 --global-residual --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+conf_gr_s1    --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+conf_grmc32_s1 --global-residual --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+conf_gr_s2    --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+conf_grmc32_s2 --global-residual --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+conf_gr_s3    --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 3
+conf_grmc32_s3 --global-residual --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 3
+conf_gr_s4    --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4
+conf_grmc32_s4 --global-residual --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4

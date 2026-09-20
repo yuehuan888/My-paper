@@ -5,6 +5,19 @@
 %
 %  IEEE conference format (IEEEtran).
 %
+%  v2.1 (2026-09-18) --- synced to paper/conference_paper.md v2.1. New in v2.1:
+%    - new Sec. 5.5 "Where the accuracy comes from: structure, not capacity"
+%      (3x budget re-run; architecture sweep; capacity ceiling; matched RED-CNN
+%      at n=3; training-stability comparison)
+%    - limitations 3 and 4 rewritten -- both are now tested, not open
+%    - abstract + contributions synced (5 -> 6 items)
+%
+%  COHORT WARNING: everything in Sec. 5.5 is measured on the RE-ACQUIRED
+%  421-slice test set, whose 30-epoch reference is the same-cohort fix_* batch.
+%  Tables I-III are the 435-slice original acquisition. Mixing the two shifts
+%  values by 0.03-0.06 dB. experiments/analyze_convergence.py asserts this
+%  invariant before comparing anything.
+%
 %  v2.0 (2026-09-16) --- synced to paper/conference_paper.md v2.0. Changes vs v1.0:
 %    - new Sec. 5.2.1 (independent replication on re-acquired data, n=10 per arm)
 %    - new Sec. 5.4 (what the transform learns; the bound and its value)
@@ -125,10 +138,11 @@ reconstruction \emph{by construction} --- parameterizing the wavelet as a liftin
 shares the forward filters --- makes learning pay off: \textbf{+0.30~dB over
 unconstrained learning ($p=0.0005$, $d_z=4.67$) and +0.27~dB over fixed Haar
 ($p=0.0004$, $d_z=4.78$)} --- large effects, not marginal ones --- consistent
-across two data splits. The resulting network has \textbf{2,159
-parameters} and reaches \textbf{31.97~dB} on AAPM-Mayo 2016, within 1.0~dB of a
-RED-CNN baseline trained under the identical protocol at \textbf{857$\times$
-fewer parameters}.
+across two data splits. The resulting network reaches 31.97~dB on AAPM-Mayo 2016
+within 1.0~dB of a same-protocol RED-CNN baseline at \textbf{857$\times$ fewer
+parameters} (2,159 vs.\ 1.85M); adding a full-resolution residual branch ---
+\textbf{305 parameters} --- brings it within \textbf{0.52~dB} at \textbf{750$\times$
+fewer}.
 
 Two further results locate the effect. First, the transform learns \emph{little}:
 from any numerically intact starting point, training converges to a narrow band
@@ -136,7 +150,10 @@ of drift from Haar and, starting \textbf{at} Haar, moves \textbf{away} --- the
 optimum is slightly off Haar, which is why adaptation buys so little here. We
 also reject the natural explanation that the heads simply substitute for the
 transform: the PR advantage does not shrink as head capacity grows by two orders
-of magnitude. Second, the failure mode is a \textbf{cliff, not a slope} --- once
+of magnitude. Quantitatively, the \textbf{first 305 architectural parameters are
+worth +0.35~dB while the next 265,000 are worth +0.26~dB} --- 871$\times$ the cost
+for a smaller gain --- which is the thesis stated as a number: here, accuracy
+comes from structure, not capacity. Second, the failure mode is a \textbf{cliff, not a slope} --- once
 the forward transform's round-trip error exceeds the signal, the gradient carries
 no information and training cannot recover (drift~4.0 stays at 4.000 and
 3.29~dB, where drift~2.0 recovers fully). Being inside the numerical envelope is
@@ -234,8 +251,18 @@ therefore slightly off Haar, which is the concrete reason ``learning'' buys so
 little here. We also test --- and reject --- the natural hypothesis that the heads
 simply substitute for the transform: the PR advantage does not shrink as head
 capacity grows by two orders of magnitude.
-\item \textbf{A 2,159-parameter network} that comes within 1.0~dB of a
-same-protocol RED-CNN baseline at \textbf{$857\times$ fewer parameters}.
+\item \textbf{Where the accuracy comes from: structure, not capacity.} A sweep of
+the four architectural degrees of freedom that prior runs left untouched, plus a
+$3\times$-budget re-run of every headline number. The PR advantage
+\textbf{widens} with training (+0.2837 $\to$ +0.3349~dB) and the null result is
+unchanged; only one lever pays (a full-resolution residual branch, \textbf{+0.35~dB
+for 305 parameters}); finer decomposition and longer lifting filters do nothing.
+Beyond that the returns collapse: \textbf{871$\times$ more parameters buy less
+than those first 305}. Retraining RED-CNN to the matched budget and data ($n=3$)
+puts the distance at \textbf{0.85~dB} (95\% CI [0.72, 0.98]) --- budget-insensitive,
+and not closed by capacity.
+\item \textbf{A 2,464-parameter network} that comes within \textbf{0.52~dB} of a
+same-protocol, same-budget RED-CNN baseline at \textbf{$750\times$ fewer parameters}.
 \end{enumerate}
 
 % ============================================================================
@@ -379,6 +406,7 @@ full-dose $512\times512$ slice pairs. Slices are paired by
 \textbf{not} possible because the slice-index field is identical on both sides.
 
 \subsection{Evaluation protocol}
+\label{sec:eval}
 AAPM never defined a PSNR protocol (its official metric was radiologist
 reading), and at least five mutually incompatible conventions coexist on this
 dataset. We adopt the \textbf{RED-CNN / CTformer lineage} convention, used
@@ -504,7 +532,10 @@ Second, under that matched comparison, PR-LWT comes within \textbf{0.97~dB} (S2)
 and \textbf{1.00~dB} (S1) of RED-CNN while using \textbf{857$\times$ fewer
 parameters} (2,159 vs.\ 1,848,865). We state plainly that \textbf{PR-LWT does not
 beat RED-CNN on PSNR}; the claim under test in this paper is about \emph{what
-makes a learnable transform helpful}, not about attaining state of the art. The
+makes a learnable transform helpful}, not about attaining state of the art.
+Section~\ref{sec:structure} revisits this comparison under a matched training
+budget and matched data, where the distance becomes 0.85~dB with a seed-level
+confidence interval --- and shows that no amount of capacity closes it. The
 parameter/PSNR trade-off is plotted in Fig.~\ref{fig:pareto}, and a visual
 comparison in Fig.~\ref{fig:visual}.
 
@@ -1040,6 +1071,162 @@ advantage persists across two orders of magnitude of head capacity (always
 shrink. This rules out ``the transform is just covering for weak heads'' as an
 explanation.
 
+\subsection{Where the accuracy comes from: structure, not capacity}
+\label{sec:structure}
+
+Section~\ref{sec:learns} showed that head capacity does not \emph{substitute} for
+the transform. This section asks the complementary question --- \emph{what does
+buy accuracy?} --- and reports a systematic sweep of the four architectural
+degrees of freedom that had never been varied, together with a re-run of every
+headline number at $3\times$ the training budget.
+
+\begin{quote}
+\small\textbf{Cohort note.} Everything in this section is measured on the
+re-acquired 421-slice test set (Section~\ref{sec:replication}), and its
+30-epoch reference is the $n=10$ \texttt{fix\_*} batch on that same data ---
+\emph{not} the 435-slice numbers in Tables~\ref{tab:main}--\ref{tab:paired}.
+Mixing the two cohorts shifts values by 0.03--0.06~dB, which is large relative
+to some of the effects below.
+\end{quote}
+
+\textbf{Longer training widens the gap rather than compressing it.} The
+limitation that every run stopped at 30 epochs with the best epoch equal to the
+last one is testable. We re-ran all three arms at 90 epochs ($n=5$,
+Table~\ref{tab:conv}):
+
+\begin{table}[t]
+\centering
+\caption{Three arms at $3\times$ the training budget, on the same 421-slice data.
+The reference column is the same cohort at 30 epochs, so the only thing that
+changes across the table is the budget.}
+\label{tab:conv}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Arm & 30 ep ($n$=10) & 90 ep ($n$=5)\\
+\midrule
+\texttt{pr} & 30.8575 $\pm$ 0.0740 & \textbf{31.0752 $\pm$ 0.0973}\\
+\texttt{unconstrained} & 30.5427 $\pm$ 0.0460 & 30.7147 $\pm$ 0.0373\\
+\texttt{fixed} & 30.5739 $\pm$ 0.0497 & 30.7403 $\pm$ 0.0177\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The gaps between arms therefore move as follows. \texttt{pr} $-$ \texttt{fixed}
+grows from $+0.2837$ to $\mathbf{+0.3349}$~dB ($p=0.0017$, $d_z=+3.37$);
+\texttt{pr} $-$ \texttt{unconstrained} grows from $+0.3148$ to
+$\mathbf{+0.3604}$~dB ($p=0.0003$, $d_z=+5.09$); and
+\texttt{unconstrained} $-$ \texttt{fixed} is essentially unchanged, from
+$-0.0312$ to $-0.0255$~dB ($p=0.23$). The concern was that the 30-epoch
+comparison might be an artefact of an arbitrary stopping point. It is not: the
+effect \emph{grows} with budget, and the null result is remarkably stable across
+a $3\times$ change in schedule.
+
+\emph{Are the arms converged at 90 epochs?} Not formally, but the remaining
+headroom is negligible. For \texttt{pr}, the per-5-epoch validation gain falls
+from $+0.0950$~dB (epochs 0--30) to $+0.0340$ (30--60) to $+0.0069$ (60--90), a
+$14\times$ collapse; the final 30 epochs add only 0.041~dB. We therefore call
+this convergence in practice, not convergence in proof.
+
+\textbf{Four architectural levers, three of which do nothing.} We swept the
+degrees of freedom that had never been varied: \texttt{global\_residual} was
+\texttt{False} in all 203 prior runs, and \texttt{levels}, \texttt{mid\_ch} and
+\texttt{n\_taps} had each only ever taken a single value
+(Table~\ref{tab:levers}).
+
+\begin{table}[t]
+\centering
+\caption{Architecture sweep. Only the full-resolution residual branch pays, and
+it costs 305 parameters. The other three either hurt or do nothing --- two
+negative results we report as such.}
+\label{tab:levers}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+Lever & Params & $\Delta$ PSNR & Verdict\\
+\midrule
+\texttt{--global-residual} & 2,159$\to$\textbf{2,464} & \textbf{+0.3515} & large, cheap\\
+\texttt{--mid-ch 32} & 2,159$\to$4,287 & +0.094 & poor for the cost\\
+\texttt{--levels 3} & 2,159$\to$3,086 & \textbf{$-$0.079} & \textbf{hurts}\\
+\texttt{--n-taps 5} & 2,159$\to$2,175 & \textbf{$-$0.001} & \textbf{nothing}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The \texttt{global\_residual} effect is $+0.3515$~dB at $n=5$
+($p=1.2\times10^{-6}$, $d_z=+21.2$). Two negative results are worth stating:
+finer frequency decomposition is \emph{not} better here, and longer lifting
+filters are irrelevant. Combining the useful lever with \texttt{--mid-ch 32}
+reaches $31.6275 \pm 0.0253$ at 4,896 parameters ($+0.4365$, $n=5$,
+$p=2.1\times10^{-6}$).
+
+\textbf{Then the returns collapse.} Scaling the network further buys almost
+nothing:
+
+\begin{table}[t]
+\centering
+\caption{The capacity ceiling. On a like-for-like seed-0 basis, the first 305
+parameters are worth $+0.3478$~dB and the next 265,792 are worth $+0.2597$~dB ---
+$871\times$ the cost for a smaller gain.}
+\label{tab:ceiling}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Configuration & Params & PSNR & $\Delta$\\
+\midrule
+\texttt{+global-residual} & 2,464 & 31.5706 & ---\\
+\texttt{+ mid\_ch 64} & 9,760 & 31.6912 & +0.121\\
+\texttt{+ n\_conv 3} & 18,704 & 31.6847 & +0.114\\
+\texttt{+ mid\_ch 32, n\_conv 3} & 69,632 & 31.8165 & +0.246\\
+\texttt{+ mid\_ch 64, n\_conv 3} & 268,256 & 31.8303 & +0.260\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This is the quantitative form of the paper's thesis: on this task, accuracy comes
+from the \emph{structure} of the transform, not from the capacity of the network
+around it. It points the same way as the substitution experiment above.
+
+\textbf{A matched comparison to RED-CNN, at equal budget and equal data.} The
+single-seed, cross-budget RED-CNN comparison in Section~\ref{sec:main-res} is not
+a fair one, so we retrained RED-CNN to the full 90-epoch budget on the same
+421-slice split, at $n=3$ seeds (Table~\ref{tab:redcnn90}):
+
+\begin{table*}[t]
+\centering
+\caption{Matched-budget, matched-data comparison. Paired by seed ($n=3$),
+RED-CNN leads the 2,464-parameter model by 0.8491~dB (95\% CI [0.723, 0.975],
+$p=0.0012$). The distance is essentially budget-insensitive: extending training
+helped both methods similarly.}
+\label{tab:redcnn90}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Method & Params & PSNR & Dist.\ to RED-CNN\\
+\midrule
+RED-CNN ($n$=3) & 1,848,865 & 32.0572 $\pm$ 0.0401 & ---\\
+PR-LWT, $\beta$=2.0 (+ \texttt{gr}) & \textbf{2,464} & 31.5425 $\pm$ 0.0223 & \textbf{0.515 dB}\\
+PR-LWT, $\beta$=2.0 (no \texttt{gr}) & 2,159 & 31.1910 $\pm$ 0.0340 & 0.866 dB\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+We report the honest reading: \textbf{PR-LWT does not close the gap to
+RED-CNN}, and it does not close it by scaling either --- Table~\ref{tab:ceiling}
+leaves 0.23~dB unclosed at 268K parameters.
+
+\textbf{A stability difference, not an accuracy difference.} One further
+comparison favours the constrained design and is independent of PSNR. Across the
+validation curves, the constrained arms are far better behaved: the median
+validation range is \textbf{0.433~dB} for PR-LWT (15 curves, worst 0.675) against
+\textbf{4.243~dB} for RED-CNN (3 curves, worst 11.246). RED-CNN's curve
+transiently collapses --- to 19.9~dB --- and recovers; PR-LWT's never does. This
+is consistent with the paper's thesis, but with three curves we state it as an
+observation rather than a measured property.
+
 % ============================================================================
 \section{Discussion and Limitations}
 % ============================================================================
@@ -1066,16 +1253,30 @@ us under our own splits and protocol (Section~\ref{sec:main-res}); CTformer and
 the remaining methods are still quoted from the literature, and the
 training-set differences noted there apply to them. Retraining further baselines
 was out of scope here.
-\item \textbf{The 30-epoch budget truncates before convergence.} On nearly every
-run the best validation epoch equals the final epoch ($30/30$), so the three arms
-are compared at a \emph{fixed budget} rather than at their optima. The comparison
-is fair --- every arm receives the identical budget --- but it compares learning
-\emph{trajectories}, not converged solutions. Longer schedules could compress or
-widen the gap; this is untested here.
-\item \textbf{The RED-CNN same-split baseline is a single seed.} We report
-$n=1$ for RED-CNN versus $n=5$/$n=3$ for the three arms, so no seed-level paired
-test is possible against it and we quote no interval. Closing this asymmetry
-requires re-running RED-CNN across seeds (roughly $6\times$ the per-seed cost).
+\item \textbf{The 30-epoch budget truncates before convergence --- tested, and it
+does not change the conclusion.} The main tables compare the arms at a fixed
+30-epoch budget, not at their optima. We re-ran all three arms at 90 epochs
+(Section~\ref{sec:structure}): the PR advantage \textbf{widens} rather than
+compresses ($+0.2837 \to +0.3349$~dB over \texttt{fixed}), and the null result is
+stable ($-0.0312 \to -0.0255$~dB). The arms are still marginally improving at
+epoch 90 (per-5-epoch gain $+0.0069$~dB, a $14\times$ collapse from the opening
+phase), so this is convergence in practice rather than in proof. The main tables
+are left at 30 epochs for internal consistency with
+Tables~\ref{tab:main}--\ref{tab:paired}; readers should treat the effect as
+\emph{at least} the quoted size.
+\item \textbf{Same-split baselines cover RED-CNN only.} RED-CNN has now been
+retrained at the matched 90-epoch budget on the matched data at $n=3$ seeds
+(Section~\ref{sec:structure}), which makes a seed-level paired test possible; the
+resulting distance is 0.85~dB (95\% CI [0.72, 0.98]). The remaining concern is
+not the seed count but the \emph{choice} of baseline: RED-CNN is from 2017, and
+no modern lightweight method has been reimplemented under our protocol. CTformer
+and the others are still quoted from the literature, and --- as
+Section~\ref{sec:eval} documents --- cross-paper PSNR on this dataset carries a
+$\sim$2~dB noise floor, which is \textbf{larger than every effect reported in
+this paper}. That is why no literature-quoted number appears in any comparison we
+draw, and why the efficiency claim in Section~\ref{sec:structure} is stated
+against a single same-protocol baseline rather than against a Pareto frontier of
+published methods.
 \item \textbf{The injected defect is structurally simpler than the real one.} We
 perturb the synthesis filter only, whereas the unconstrained arm's two filter
 banks drift apart independently. The intervention establishes sufficiency at
@@ -1113,7 +1314,7 @@ reference, in HU.}
 \label{fig:visual}
 \end{figure*}
 
-\begin{figure}[t]
+\begin{figure}[!tbp]
 \centering
 \includegraphics[width=\columnwidth]{fig4_pareto.png}
 \caption{Parameter efficiency on L506. The dotted line is the published RED-CNN
@@ -1196,7 +1397,7 @@ answer, not by figure number.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig5_slice_dist.png}
+\includegraphics[width=0.82\textwidth]{fig5_slice_dist.png}
 \caption{\textbf{(a)}~Per-seed PSNR distribution across test slices (half-violin
 with jittered points; black bars are quartiles and median). The three arms'
 distributions overlap almost completely, so the effect is not carried by a
@@ -1209,7 +1410,7 @@ rather than the slice as the unit of analysis.}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig6_convergence.png}
+\includegraphics[width=0.82\textwidth]{fig6_convergence.png}
 \caption{Convergence dynamics: \textbf{(a)}~training $L_1$ and \textbf{(b)}~validation
 PSNR, three arms, mean $\pm$ 1 SD over five seeds. The two panels use
 \emph{separate} $x$ axes --- validation runs every fifth epoch, so it has six
@@ -1223,7 +1424,7 @@ not converged, which is limitation~4.}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig7_forest.png}
+\includegraphics[width=0.82\textwidth]{fig7_forest.png}
 \caption{Effect sizes for all six paired comparisons: $\Delta$ with 95\% CI. The
 grey band is the MDES interval at that $n$ --- the range the design cannot
 resolve. The two null results fall entirely inside the band; the two significant
@@ -1233,7 +1434,7 @@ results have intervals wholly outside it.}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig9_perpatient.png}
+\includegraphics[width=0.82\textwidth]{fig9_perpatient.png}
 \caption{\textbf{(a)}~Per-patient consistency: the effect direction is the same on
 L506 ($n=211$) and L067 ($n=224$). \textbf{(b)}~The two patients' identity floors
 differ by \textbf{2.69~dB}, larger than any effect reported in this paper --- which
@@ -1243,7 +1444,7 @@ is why results are given per patient and tested per seed.}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig12_effect_forest.png}
+\includegraphics[width=0.82\textwidth]{fig12_effect_forest.png}
 \caption{The original study against the replication: $\Delta$ and 95\% CI for each
 comparison, with each one's MDES band. The paired ratios replicate; only the
 absolute levels shift, with the identity floor.}

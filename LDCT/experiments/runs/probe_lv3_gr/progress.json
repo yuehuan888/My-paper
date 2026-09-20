@@ -1,0 +1,10 @@
+{
+  "tag": "probe_lv3_gr",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 85,
+  "best_val_psnr": 30.63080720373215,
+  "elapsed_min": 11.885656889279684,
+  "peak_vram_mb": 657.7,
+  "updated": "2026-09-18T09:29:45.356723+00:00"
+}

@@ -1,0 +1,10 @@
+{
+  "tag": "probe_base",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 85,
+  "best_val_psnr": 30.226944981789103,
+  "elapsed_min": 9.2321444829305,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-18T08:57:02.886189+00:00"
+}

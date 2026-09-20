@@ -1,0 +1,10 @@
+{
+  "tag": "ceil_mc32nc3",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 30.88952877500662,
+  "elapsed_min": 14.848825160662333,
+  "peak_vram_mb": 658.7,
+  "updated": "2026-09-20T07:19:15.231162+00:00"
+}

@@ -21,10 +21,10 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEX = os.path.join(os.path.dirname(HERE), "paper", "latex", "main.tex")
 
-# > 20pt 超宽 -> 跨栏
-WIDEN = ["tab:arms", "tab:rt", "tab:interv", "tab:repl-arms", "tab:bound"]
-# <= 20pt 超宽 -> 栏内收窄
-TIGHTEN = ["tab:floor", "tab:repl-paired"]
+# v2.1 新增的 §5.5 四张表（编译实测超宽 18-50pt）
+WIDEN = ["tab:conv", "tab:levers", "tab:ceiling", "tab:redcnn90"]
+# 已处理过的，不再动
+TIGHTEN = []
 
 # 注意：表格的 \label 紧跟在 \caption 之后，**不在** \end{table} 之前
 # （图是反过来的）。所以先整块匹配，再从块内取 label。

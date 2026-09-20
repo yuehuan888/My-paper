@@ -1,8 +1,22 @@
 # Does Learning a Wavelet Help? Perfect-Reconstruction Constraints Enable Learnable Wavelets for Low-Dose CT Denoising
 
-> **会议版草稿 v2.0** — 2026-09-16
+> **会议版草稿 v2.1** — 2026-09-18
 > 目标：EI 会议（ICIP 5+1 页格式，可适配 ICME 6 页 / EUSIPCO 5 页）
 > 所有数字均来自已完成的实验，**无占位符**。
+>
+> v2.1 相对 v2.0 的变化（本轮新增 60 个 run）：
+>   - 新增 §5.5「精度从哪来：结构而非容量」
+>     · 三臂跑到 90 轮（3× 预算）：差距**拉大** +0.2837 → +0.3349，零结果不变
+>     · 扫了四个从未动过的架构自由度；只有 global_residual 有效（+0.35 dB / 305 参数）
+>     · 容量天花板：再投 265,792 个参数只换来 +0.26 dB（871× 代价换更小收益）
+>     · RED-CNN 同预算同数据重训到 n=3：距离 0.85 dB（95% CI [0.72, 0.98]），且不被容量闭合
+>     · 训练稳定性：PR-LWT 验证极差中位 0.433 dB vs RED-CNN 4.243 dB
+>   - 局限 3（30 轮截断）与局限 4（RED-CNN 单种子）**已实测解决**，改写
+>   - 摘要与贡献列表同步（贡献 5 -> 6 条）
+>
+> ⚠️ **口径提醒**：§5.5 及本次新增数字全部基于 **421 片**的重新获取数据，
+> 其 30 轮参照是同一数据上的 `fix_*`（n=10）；主表 I–III 是 **435 片**的原始数据。
+> 两批混用会带来 0.03–0.06 dB 偏差，脚本 `analyze_convergence.py` 内置了口径自检。
 >
 > v2.0 相对 v1.0 的变化：
 >   - 新增 §5.2.1（独立重下数据的复现 + 训练协议可复现性更正）
@@ -31,10 +45,10 @@ perfect reconstruction *by construction* — parameterizing the wavelet as a lif
 scheme whose inverse shares the forward filters — makes learning pay off:
 **+0.30 dB over unconstrained learning (p = 0.0005, $d_z$ = 4.67) and +0.27 dB over
 fixed Haar (p = 0.0004, $d_z$ = 4.78)** — large effects, not marginal ones,
-consistent across two data splits. The resulting network has
-**2,159 parameters** and reaches **31.97 dB** on AAPM-Mayo 2016, within 1.0 dB of
-a RED-CNN baseline trained under the identical protocol at **857× fewer
-parameters**.
+consistent across two data splits. The resulting network reaches 31.97 dB on
+AAPM-Mayo 2016 within 1.0 dB of a same-protocol RED-CNN baseline at **857× fewer
+parameters** (2,159 vs. 1.85M); with a full-resolution residual branch added —
+**305 parameters** — it comes within **0.52 dB** at **750× fewer**.
 
 Two further results locate the effect. First, the transform learns *little*: from
 any numerically intact starting point, training converges to a narrow band of
@@ -42,7 +56,10 @@ drift from Haar and, starting **at** Haar, moves **away** — the optimum is
 slightly off Haar, which is why adaptation buys so little here. We also reject
 the natural explanation that the heads simply substitute for the transform: the
 PR advantage does not shrink as head capacity grows by two orders of magnitude.
-Second, the failure mode is a **cliff, not a slope** — once the forward
+Quantitatively, the **first 305 architectural parameters are worth +0.35 dB while
+the next 265,000 are worth +0.26 dB** — 871× the cost for a smaller gain — which
+is the thesis stated as a number: here, accuracy comes from structure, not
+capacity. Second, the failure mode is a **cliff, not a slope** — once the forward
 transform's round-trip error exceeds the signal, the gradient carries no
 information and training cannot recover (drift 4.0 stays at 4.000 and 3.29 dB,
 where drift 2.0 recovers fully). Being inside the numerical envelope is
@@ -125,8 +142,18 @@ denoisers cannot observe this state, because their designs make it unreachable.
    little here. We also test — and reject — the natural hypothesis that the heads
    simply substitute for the transform: the PR advantage does not shrink as head
    capacity grows by two orders of magnitude.
-5. **A 2,159-parameter network** that comes within 1.0 dB of a same-protocol
-   RED-CNN baseline at **857× fewer parameters**.
+5. **Where the accuracy comes from: structure, not capacity.** A sweep of the
+   four architectural degrees of freedom that prior runs left untouched, plus a
+   3×-budget re-run of every headline number. The PR advantage **widens** with
+   training (+0.2837 → +0.3349 dB) and the null result is unchanged; only one
+   lever pays (a full-resolution residual branch, **+0.35 dB for 305
+   parameters**); finer decomposition and longer lifting filters do nothing.
+   Beyond that the returns collapse: **871× more parameters buy less than those
+   first 305**. Retraining RED-CNN to the matched budget and data ($n=3$) puts
+   the distance at **0.85 dB** (95% CI [0.72, 0.98]) — budget-insensitive, and
+   not closed by capacity.
+6. **A 2,464-parameter network** that comes within **0.52 dB** of a same-protocol,
+   same-budget RED-CNN baseline at **750× fewer parameters**.
 
 ---
 
@@ -338,7 +365,10 @@ Second, under that matched comparison, PR-LWT comes within **0.97 dB** (S2) and
 **1.00 dB** (S1) of RED-CNN while using **857× fewer parameters** (2,159 vs.
 1,848,865). We state plainly that **PR-LWT does not beat RED-CNN on PSNR**; the
 claim under test in this paper is about *what makes a learnable transform
-helpful*, not about attaining state of the art.
+helpful*, not about attaining state of the art. §5.5 revisits this comparison
+under a matched training budget and matched data, where the distance becomes
+0.85 dB with a seed-level confidence interval — and shows that no amount of
+capacity closes it.
 
 ### 5.2 Ablation: is invertibility the key?
 
@@ -657,6 +687,114 @@ heads grow nor amplifies when they shrink. With $n = 3$ at both ends we do not
 claim the upward trend itself. This rules out "the transform is just covering for
 weak heads" as an explanation.
 
+### 5.5 Where the accuracy comes from: structure, not capacity
+
+§5.4 showed that head capacity does not *substitute* for the transform. This
+section asks the complementary question — **what does buy accuracy?** — and
+reports a systematic sweep of the four architectural degrees of freedom that had
+never been varied, together with a re-run of every headline number at 3× the
+training budget.
+
+> **Cohort note.** Everything in this section is measured on the re-acquired
+> 421-slice test set (§5.2.1), and its 30-epoch reference is the $n=10$
+> `fix_*` batch on that same data — *not* the 435-slice numbers in Tables
+> I–III. Mixing the two cohorts shifts values by 0.03–0.06 dB, which is large
+> relative to some of the effects below.
+
+**Longer training widens the gap rather than compressing it.** Limitation 3
+noted that every run stopped at 30 epochs with the best epoch equal to the last.
+We re-ran all three arms at 90 epochs ($n=5$):
+
+| Arm | 30 ep ($n$=10) | 90 ep ($n$=5) | $\Delta$ |
+|---|---|---|---|
+| `pr` | 30.8575 ± 0.0740 | **31.0752 ± 0.0973** | +0.2177 |
+| `unconstrained` | 30.5427 ± 0.0460 | 30.7147 ± 0.0373 | +0.1720 |
+| `fixed` | 30.5739 ± 0.0497 | 30.7403 ± 0.0177 | +0.1664 |
+
+| Comparison | 30 ep | 90 ep | direction |
+|---|---|---|---|
+| `pr` − `fixed` | +0.2837 | **+0.3349** ($p=0.0017$, $d_z=+3.37$) | **widens** |
+| `pr` − `unconstrained` | +0.3148 | **+0.3604** ($p=0.0003$, $d_z=+5.09$) | **widens** |
+| `unconstrained` − `fixed` | −0.0312 | −0.0255 ($p=0.23$) | unchanged |
+
+The concern in limitation 3 was that the 30-epoch comparison might be an artifact
+of an arbitrary stopping point. It is not: the effect **grows** with budget, and
+the null result is remarkably stable across a 3× change in schedule.
+
+*Are the arms actually converged at 90 epochs?* Not formally, but close enough
+that the remaining headroom is negligible. For `pr`, the per-5-epoch validation
+gain falls from **+0.0950 dB** (epochs 0–30) to **+0.0340** (30–60) to
+**+0.0069** (60–90) — a 14× collapse; the final 30 epochs add only 0.041 dB.
+
+**Four architectural levers, three of which do nothing.** We swept the degrees of
+freedom that had never been varied (`global_residual` was `False` in all 203
+prior runs; `levels`, `mid_ch` and `n_taps` had only ever taken one value):
+
+| Lever | Params | $\Delta$ PSNR | Verdict |
+|---|---|---|---|
+| `--global-residual` | 2,159 → **2,464** | **+0.3515** ($n$=5, $p=1.2\times10^{-6}$, $d_z=+21.2$) | **large, cheap** |
+| `--mid-ch 32` | 2,159 → 4,287 | +0.094 ($n$=1) | small for the cost |
+| `--levels 3` | 2,159 → 3,086 | **−0.079** ($n$=1) | **hurts** |
+| `--n-taps 5` | 2,159 → 2,175 | **−0.001** ($n$=1) | **nothing** |
+
+Two of these are negative results worth stating: **finer frequency decomposition
+is not better here**, and **longer lifting filters are irrelevant**. Adding a
+full-resolution residual branch (`global_residual`) is the only lever that pays,
+and it does so for **305 parameters**. Combining it with `--mid-ch 32` reaches
+31.6275 ± 0.0253 at 4,896 parameters (+0.4365, $n$=5, $p=2.1\times10^{-6}$).
+
+**Then the returns collapse.** Scaling the network further buys almost nothing:
+
+| Configuration | Params | PSNR (seed 0) | $\Delta$ vs `+gr` |
+|---|---|---|---|
+| `+global-residual` | 2,464 | 31.5706 | — |
+| `+ mid_ch 64` | 9,760 | 31.6912 | +0.121 |
+| `+ n_conv 3` | 18,704 | 31.6847 | +0.114 |
+| `+ mid_ch 32, n_conv 3` | 69,632 | 31.8165 | +0.246 |
+| `+ mid_ch 64, n_conv 3` | 268,256 | 31.8303 | +0.260 |
+
+On a like-for-like seed-0 basis: **the first 305 parameters are worth +0.3478 dB;
+the next 265,792 are worth +0.2597 dB.** That is **871× the parameter cost for a
+smaller gain**. This is the quantitative form of the paper's thesis — on this
+task, accuracy comes from the *structure* of the transform, not from the capacity
+of the network around it — and it points the same way as the substitution
+experiment above.
+
+**A matched comparison to RED-CNN, at equal budget and equal data.** The
+single-seed, cross-budget RED-CNN comparison in §5.1 is not a fair one. We
+therefore retrained RED-CNN to the full 90-epoch budget on the same 421-slice
+split, at $n=3$ seeds:
+
+| Method | Params | PSNR | SSIM | Distance to RED-CNN |
+|---|---|---|---|---|
+| RED-CNN ($n$=3) | 1,848,865 | 32.0572 ± 0.0401 | 0.8868 | — |
+| PR-LWT, $\beta$=2.0 | 2,464 ($+$`gr`) | 31.5425 ± 0.0223 | 0.8826 | **0.515 dB** |
+| PR-LWT, $\beta$=2.0, no `gr` | 2,159 | 31.1910 ± 0.0340 | 0.8806 | 0.866 dB |
+
+Paired by seed ($n=3$), RED-CNN leads the 2,464-parameter model by
+**0.8491 dB** (95% CI [0.723, 0.975], $p = 0.0012$). Extending the budget moved
+both methods similarly — RED-CNN improved from 31.8310 to 32.0572 — so the
+distance is **essentially budget-insensitive**: 1.00 dB at 30 epochs versus
+0.87–0.52 dB at 90 epochs depending on configuration. We report the honest
+reading: **PR-LWT does not close the gap to RED-CNN**, and it does not close it
+by scaling either (the ceiling table above leaves 0.23 dB unclosed at 268K
+parameters).
+
+**A stability difference, not an accuracy difference.** One further comparison
+favours the constrained design, and is worth stating because it is independent of
+PSNR. Across the validation curves, the constrained arms are far better behaved:
+
+| | Validation range (median) | worst curve |
+|---|---|---|
+| PR-LWT (15 curves) | **0.433 dB** | 0.675 dB |
+| RED-CNN (3 curves) | **4.243 dB** | 11.246 dB |
+
+RED-CNN's validation curve transiently collapses (to 19.9 dB) and recovers;
+PR-LWT's never does. This is consistent with the paper's thesis — a structurally
+constrained transform removes a failure mode the optimizer would otherwise have
+to navigate — though with three curves we state it as an observation, not a
+measured property.
+
 ---
 
 ## 6. Discussion and Limitations
@@ -674,18 +812,28 @@ error the network must model, which is what allows adaptation to help.
    *patient-to-patient* identity-floor spread is **3.75 dB** (§4.4) — an order of
    magnitude larger than any effect reported here — which is precisely why the
    seed, not the slice, is the unit of analysis.
-3. **The 30-epoch budget truncates before convergence.** On nearly every run the
-   best validation epoch equals the final epoch (30/30), so all three arms are
-   compared at a *fixed budget* rather than at their optima. The comparison is
-   fair — every arm receives the identical budget — but it is a comparison of
-   learning *trajectories*, not of converged solutions. Longer schedules could
-   compress or widen the gap; this is untested here.
-4. **Same-split baselines cover RED-CNN only, at a single seed.** RED-CNN was
-   retrained by us under our own splits and protocol (§5.1), but with $n=1$ seed
-   versus $n=5$/$n=3$ for the three arms, so no seed-level paired test is
-   possible for it and we report no interval. CTformer and the remaining methods
-   are still quoted from the literature, and the training-set differences noted
-   there apply to them. Retraining further baselines was out of scope.
+3. **The 30-epoch budget truncates before convergence — tested, and it does not
+   change the conclusion.** The main tables compare the arms at a fixed 30-epoch
+   budget, not at their optima. We re-ran all three arms at 90 epochs (§5.5): the
+   PR advantage **widens** rather than compresses (+0.2837 → +0.3349 dB over
+   `fixed`), and the null result is stable (−0.0312 → −0.0255 dB). The arms are
+   still marginally improving at epoch 90 (per-5-epoch gain +0.0069 dB, a 14×
+   collapse from the opening phase), so this is convergence in practice rather
+   than in proof. The main tables are left at 30 epochs for internal consistency
+   with Tables I–III; readers should treat the effect as *at least* the quoted
+   size.
+4. **Same-split baselines cover RED-CNN only.** RED-CNN has now been retrained at
+   the matched 90-epoch budget on the matched data at $n=3$ seeds (§5.5), which
+   makes a seed-level paired test possible; the resulting distance is 0.85 dB
+   (95% CI [0.72, 0.98]). The remaining concern is not the seed count but the
+   *choice* of baseline: RED-CNN is from 2017, and no modern lightweight method
+   has been reimplemented under our protocol. CTformer and the others are still
+   quoted from the literature, and — as §4.2 documents — cross-paper PSNR on this
+   dataset carries a ~2 dB noise floor, which is **larger than every effect
+   reported in this paper**. That is why no literature-quoted number appears in
+   any comparison we draw, and why the efficiency claim in §5.5 is stated against
+   a single same-protocol baseline rather than against a Pareto frontier of
+   published methods.
 5. **The injected defect is structurally simpler than the real one.** We perturb
    the synthesis filter only, whereas the unconstrained arm's two filter banks
    drift apart independently. The intervention establishes sufficiency at

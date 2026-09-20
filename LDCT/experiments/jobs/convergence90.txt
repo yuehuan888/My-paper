@@ -1,0 +1,20 @@
+conv90_pr_s0 --wavelet pr --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+conv90_unconstrained_s0 --wavelet unconstrained --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+conv90_fixed_s0 --wavelet fixed --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+conv90_bnd20_s0 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+conv90_pr_s1 --wavelet pr --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+conv90_unconstrained_s1 --wavelet unconstrained --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+conv90_fixed_s1 --wavelet fixed --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+conv90_bnd20_s1 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+conv90_pr_s2 --wavelet pr --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+conv90_unconstrained_s2 --wavelet unconstrained --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+conv90_fixed_s2 --wavelet fixed --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+conv90_bnd20_s2 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+conv90_pr_s3 --wavelet pr --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 3
+conv90_unconstrained_s3 --wavelet unconstrained --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 3
+conv90_fixed_s3 --wavelet fixed --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 3
+conv90_bnd20_s3 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 3
+conv90_pr_s4 --wavelet pr --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4
+conv90_unconstrained_s4 --wavelet unconstrained --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4
+conv90_fixed_s4 --wavelet fixed --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4
+conv90_bnd20_s4 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4

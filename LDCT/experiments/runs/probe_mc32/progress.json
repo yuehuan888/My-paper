@@ -1,0 +1,10 @@
+{
+  "tag": "probe_mc32",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 30.327463083295015,
+  "elapsed_min": 9.662201162179311,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-18T09:07:31.010784+00:00"
+}
