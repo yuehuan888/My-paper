@@ -120,14 +120,44 @@ def main():
         out.setdefault("all_patients", {})[pid] = {
             "n": len(rs), "PSNR": p, "SSIM": s}
 
+    # ---------------------------------------------------------------- 防呆
+    OUT_PATH = os.path.join(HERE, "identity_floors.json")
+    # ⚠️ 2026-09-16 踩过的坑：`identity_floors.json` 是**论文 §4.4 明确引用**的产物，
+    #    而重下数据后它的切片数会变（435 -> 421）。直接重跑会**静默覆盖**论文引用的
+    #    数字，导致正文与产物对不上。
+    #    故：若新算出的患者切片数与已有文件不一致，**改写到 _replication 后缀**，
+    #    并把这件事打印出来，绝不静默覆盖。
+    _n_now = sum(len(v) for v in buckets.values())
+    if os.path.exists(OUT_PATH):
+        try:
+            with open(OUT_PATH, encoding="utf-8") as f:
+                _old = json.load(f)
+            _n_old = sum(v["n"] for k, v in _old.get("all_patients", {}).items()
+                         if k != "__span__")
+        except Exception:
+            _n_old = None
+        if _n_old is not None and _n_old != _n_now:
+            alt = OUT_PATH.replace(".json", "_replication.json")
+            print(f"\n  ⚠️ 切片数变了（已有 {_n_old} -> 本次 {_n_now}）："
+                  f"为避免覆盖论文 §4.4 引用的产物，改写 -> {os.path.basename(alt)}",
+                  flush=True)
+            OUT_PATH = alt
+
     lo, hi = min(vals), max(vals)
     print(f"\n  跨度：{lo:.4f} – {hi:.4f} dB", flush=True)
-    print(f"  论文 §3.4 原文声称 23.99 – 30.33 —— "
-          f"{'✅ 吻合' if abs(lo-23.99) < 0.05 and abs(hi-30.33) < 0.05 else '⚠️ 需核对'}",
-          flush=True)
+    # 论文当前（§4.4）写的是 "25.50 – 29.25 dB"。
+    # ⚠️ 本脚本早先比较的是 "23.99 – 30.33"，那是**更早一版的论文数字**，
+    #    与现在的表对不上（表里从来只有 10 行、最高 29.25）。已在论文中更正为
+    #    25.50–29.25，这里同步。容差 0.05 dB 足以覆盖缺片带来的微小位移。
+    PAPER_LO, PAPER_HI = 25.50, 29.25
+    ok_span = abs(lo - PAPER_LO) < 0.05 and abs(hi - PAPER_HI) < 0.05
+    print(f"  论文 §4.4 声称 {PAPER_LO:.2f} – {PAPER_HI:.2f} —— "
+          f"{'✅ 吻合' if ok_span else '⚠️ 需核对'}", flush=True)
+    print(f"  （本次数据 {sum(len(v) for v in buckets.values())} 片；"
+          f"原始获取为 435 片——缺片会让个别患者均值轻微位移）", flush=True)
     out["all_patients"]["__span__"] = {"lo": lo, "hi": hi}
 
-    dst = os.path.join(HERE, "identity_floors.json")
+    dst = OUT_PATH
     with open(dst, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
     print(f"\n已写入 {dst}", flush=True)

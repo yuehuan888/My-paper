@@ -1,0 +1,10 @@
+{
+  "tag": "conv90_unconstrained_s4",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 29.791991898339273,
+  "elapsed_min": 5.519486439228058,
+  "peak_vram_mb": 305.3,
+  "updated": "2026-09-18T03:00:31.720607+00:00"
+}

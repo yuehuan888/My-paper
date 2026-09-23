@@ -95,9 +95,13 @@ def fig_mech(out):
     """闭环误差：**从实测 JSON 读**，不再硬编码。
 
     ⚠️ 2026-09-14 修正：本函数此前硬编码 {pr: 9.3e-08, unconstrained: 9.9e-01}
-    并在图上印出 "99% of the signal lost"。该 9.9e-01 **查无出处**——
-    对训练完成的 checkpoint 实测得的是 1.25e-01（12.5%），差了约 8 倍。
-    正文已改，图也必须跟着改，否则图会推翻正文。
+    并在图上印出 "99% of the signal lost"。该 9.9e-01 **查无出处**。
+
+    ⚠️ 2026-09-15 二次勘误：上一条修正的注释里写的 "1.25e-01（12.5%）" **同样
+    查无出处** —— 那是从一个硬编码常量抄来的，该常量的注释又以论文为出处，
+    构成循环。**唯一的 S1 实测是 0.1492，且 n=1**（本函数读的那个 JSON）。
+    正文表格当时写 1.25e-01，与**本函数画出的 1.49e-01 当场打架**；
+    现已改为与图同数。教训：图读 JSON 是对的，注释里的数字才是错的。
 
     数据源：`verify_roundtrip.py --checkpoints` 的输出
             `roundtrip_checkpoints_w3.json`（逐种子的实测值）。
@@ -251,10 +255,17 @@ def fig_mech2(out):
     分成两张是重复，合成一张才完整：从**相关**到**因果**。
 
     数据源
-        (a) roundtrip_checkpoints_w3.json   （verify_roundtrip.py --checkpoints）
+        (a) roundtrip_checkpoints_new.json  —— **优先**，n=10（2026-09-16 重训后）
+            roundtrip_checkpoints_w3.json   —— 回退，n=1（旧数据，原始论文用的）
         (b) intervention_results.json        （analyze_intervention.py）
+
+    ⚠️ 为什么优先用 new_：闭环误差是在**固定随机探针**上测的，与测试集无关，
+       所以种子数是这里唯一有意义的量。旧文件只有 n=1，画出来的误差棒恒为 0，
+       与题注声称的 "n=10; error bars are std" 矛盾（这处矛盾被审计抓到过）。
     """
-    rt_path = os.path.join(HERE, "roundtrip_checkpoints_w3.json")
+    rt_path = os.path.join(HERE, "roundtrip_checkpoints_new.json")
+    if not os.path.exists(rt_path):
+        rt_path = os.path.join(HERE, "roundtrip_checkpoints_w3.json")
     iv_path = os.path.join(HERE, "intervention_results.json")
     with open(rt_path, encoding="utf-8") as f:
         rt = json.load(f)

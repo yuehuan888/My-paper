@@ -250,7 +250,10 @@ def train(args):
                                   n_conv=args.n_conv,
                                   wavelet=args.wavelet,
                                   global_residual=args.global_residual,
-                                  synth_mismatch=args.synth_mismatch).to(device)
+                                  synth_mismatch=args.synth_mismatch,
+                                  n_taps=args.n_taps,
+                                  bound=args.bound,
+                                  init_drift=args.init_drift).to(device)
     n_par = count_parameters(model)
     # 只有 PRWaveletDenoiser 提供参数构成与闭环诊断；RED-CNN 无此接口
     rep = (model.param_report() if hasattr(model, "param_report")
@@ -262,9 +265,18 @@ def train(args):
         "created": datetime.now(timezone.utc).isoformat(),
         "code_version": code_version(), "seed": args.seed,
         "epochs": args.epochs, "batch_size": args.batch_size,
+        # ⚠️ 更正（2026-09-16）：此处原写"parallelism 影响速度但不影响数值"——**是错的**。
+        #    DataLoader 的每个 worker 进程有独立的 torch RNG 状态，而随机裁块正是
+        #    从 torch 全局 RNG 取的。实测同 seed=0：workers=0 得 30.8684、
+        #    workers=4 得 30.8172（差 0.051 dB）。换 workers 等于换了一次实验。
+        "workers": args.workers,
         "patch": args.patch, "learning_rate": args.learning_rate,
         "lr_milestones": None, "levels": args.levels,
         "mid_ch": args.mid_ch, "n_conv": args.n_conv,
+        # 提升格式旋钮。默认 3 / 0.5 = 全部已有结果所用的配置；
+        # 不记录的话 bound 扫描的结果无法区分是哪个 bound 跑出来的。
+        "n_taps": args.n_taps, "bound": args.bound,
+        "init_drift": args.init_drift,
         "wavelet": args.wavelet,
         "global_residual": args.global_residual,
         # 干预实验的注入强度。非 0 时本次运行是"被注入闭环误差的 PR 臂"，
@@ -305,8 +317,30 @@ def train(args):
     print(f"  代码版本  : {cfg['code_version']}")
     print("=" * 78)
 
+    # ---------------------------------------------------------------- 数据加载
+    # 两条**实测**结论（2026-09-16，RTX 3050 6GB；模型仅 2,159 参数、激活 ~15 MB）：
+    #
+    # 1. `num_workers>0` **更慢**，不是更快。
+    #    实测 30 轮：workers=0 → 162.9s；workers=4 → 177.6s。
+    #    Windows 下 worker>0 走 spawn，进程启动 + 数据序列化开销超过并行收益，
+    #    而 h5 已在内存缓存、读取本来就快。
+    #    （曾误以为 GPU 空转是数据加载造成的 —— 错。真因见 run_parallel.py 的注释：
+    #      是 kernel launch 开销，靠**并发跑多个进程**解决，不是靠 worker。）
+    #
+    # 2. `num_workers` **会改变数值**（不只是速度）。
+    #    DataLoader 的每个 worker 进程有**独立的 torch RNG 状态**，而
+    #    `AapmDataset.__getitem__` 的随机裁块正是从 torch 全局 RNG 取的
+    #    （见 data/dataset.py 中 2026-09-16 的修复说明）。
+    #    实测同 seed=0：workers=0 → 30.8684，workers=4 → 30.8172（差 0.051 dB）。
+    #    ⚠️ 所以「换 workers 重跑」得到的是**不同的一次实验**，不能与旧数字并列。
+    #
+    # 结论：默认 `--workers 0`。要提速请用 experiments/run_parallel.py 并发跑多作业。
+    _workers = max(0, int(args.workers))
+    _persist = _workers > 0          # 无 worker 时 persistent 无意义
     tr_loader = DataLoader(tr, batch_size=args.batch_size, shuffle=True,
-                           num_workers=0, pin_memory=True, drop_last=True)
+                           num_workers=_workers, pin_memory=True, drop_last=True,
+                           persistent_workers=_persist,
+                           prefetch_factor=4 if _workers > 0 else None)
     va_loader = DataLoader(va, batch_size=1, shuffle=False, num_workers=0)
 
     criterion = nn.L1Loss()
@@ -491,9 +525,28 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch-size", type=int, default=8)
+    # 数据加载并行度。**默认 0（保持原行为）**。
+    # 2026-09-16 实测：workers=4 反而更慢（177.6s vs 162.9s，30 轮）——
+    # Windows 下 worker>0 走 spawn，进程启动与数据序列化的开销超过了并行收益，
+    # 而 h5 读取本来就快。所以 GPU 空转**不是**数据加载造成的。
+    # 真正的瓶颈是 kernel launch 开销（模型只有 2,159 参数，算子极小，
+    # batch 8 / patch 128 每次 kernel 干的活不够填启动开销）。
+    ap.add_argument("--workers", type=int, default=0,
+                    help="DataLoader worker 数（0=串行；实测 Windows 下 >0 更慢）")
     ap.add_argument("--patch", type=int, default=128)
     ap.add_argument("--learning-rate", type=float, default=1e-3)
     ap.add_argument("--levels", type=int, default=2)
+    # 提升格式的两个旋钮。默认值即全部已有结果所用的配置。
+    # 暴露它们的用途：贡献 3（"结构 PR 在 float32 下不自动成立，必须界定 taps"）
+    # 此前只有一个观测点（无界 → 5.2e+00），无法画剂量-响应曲线。
+    ap.add_argument("--n-taps", type=int, default=3,
+                    help="提升滤波器 P/U 的抽头数，必须为奇数（默认 3）")
+    ap.add_argument("--init-drift", type=float, default=0.0,
+                    help="把 taps 初始化在离 Haar 距离 d 处（E3 用）。"
+                         "必须 < --bound，故 E3 需配 --bound 8.0。默认 0 = 严格 Haar。")
+    ap.add_argument("--bound", type=float, default=0.5,
+                    help="taps 相对 Haar 初始值的最大偏离，即 |taps| <= init + bound"
+                         "（默认 0.5）。调大即模拟无界化，用于验证数值稳定性边界。")
     ap.add_argument("--mid-ch", type=int, default=16)
     ap.add_argument("--n-conv", type=int, default=2)
     ap.add_argument("--model", default="pr_wavelet",

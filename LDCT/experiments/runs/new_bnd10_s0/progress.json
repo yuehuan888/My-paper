@@ -1,0 +1,10 @@
+{
+  "tag": "new_bnd10_s0",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.936573445623193,
+  "elapsed_min": 2.6531105677286786,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T02:47:50.258754+00:00"
+}

@@ -1,0 +1,49 @@
+{
+  "tag": "conf_gr_s0",
+  "model": "pr_wavelet",
+  "created": "2026-09-20T05:47:29.363000+00:00",
+  "code_version": "739a801001d9-dirty",
+  "seed": 0,
+  "epochs": 90,
+  "batch_size": 8,
+  "workers": 0,
+  "patch": 128,
+  "learning_rate": 0.001,
+  "lr_milestones": [
+    45,
+    72,
+    81
+  ],
+  "levels": 2,
+  "mid_ch": 16,
+  "n_conv": 2,
+  "n_taps": 3,
+  "bound": 2.0,
+  "init_drift": 0.0,
+  "wavelet": "pr",
+  "global_residual": true,
+  "synth_mismatch": 0.0,
+  "n_params": 2464,
+  "param_report": {
+    "wavelet": 24,
+    "heads": 2135,
+    "global": 305,
+    "total": 2464,
+    "wavelet_frac": 0.00974025974025974
+  },
+  "dataset": "aapm",
+  "data_root": "data\\aapm_h5",
+  "split_file": "D:\\huan.yue\\mypaper\\My-paper\\LDCT\\splits\\aapm_mayo_3mm.json",
+  "n_train": 1600,
+  "n_val": 343,
+  "n_test": 421,
+  "slice_shape": [
+    512,
+    512
+  ],
+  "val_interval": 5,
+  "val_limit": null,
+  "test_limit": null,
+  "device": "cuda",
+  "torch": "2.5.1+cu121"
+}

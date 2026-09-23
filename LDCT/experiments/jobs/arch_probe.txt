@@ -1,0 +1,7 @@
+probe_base --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+probe_gr --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+probe_lv3 --levels 3 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+probe_mc32 --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+probe_nt5 --n-taps 5 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+probe_gr_mc32 --global-residual --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+probe_lv3_gr --levels 3 --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0

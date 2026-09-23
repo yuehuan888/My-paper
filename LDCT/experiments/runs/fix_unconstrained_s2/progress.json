@@ -1,0 +1,10 @@
+{
+  "tag": "fix_unconstrained_s2",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.65740389031502,
+  "elapsed_min": 5.430892411867777,
+  "peak_vram_mb": 305.3,
+  "updated": "2026-09-16T08:43:33.097455+00:00"
+}

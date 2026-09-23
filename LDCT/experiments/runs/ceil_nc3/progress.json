@@ -1,0 +1,10 @@
+{
+  "tag": "ceil_nc3",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 30.753412480256994,
+  "elapsed_min": 12.856680500507355,
+  "peak_vram_mb": 657.9,
+  "updated": "2026-09-20T07:03:06.038692+00:00"
+}

@@ -1,0 +1,15 @@
+fix_bnd05_s0 --wavelet pr --bound 0.5 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+fix_bnd05_s1 --wavelet pr --bound 0.5 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+fix_bnd05_s2 --wavelet pr --bound 0.5 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+fix_bnd10_s0 --wavelet pr --bound 1.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+fix_bnd10_s1 --wavelet pr --bound 1.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+fix_bnd10_s2 --wavelet pr --bound 1.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+fix_bnd20_s0 --wavelet pr --bound 2.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+fix_bnd20_s1 --wavelet pr --bound 2.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+fix_bnd20_s2 --wavelet pr --bound 2.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+fix_bnd40_s0 --wavelet pr --bound 4.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+fix_bnd40_s1 --wavelet pr --bound 4.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+fix_bnd40_s2 --wavelet pr --bound 4.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 2
+fix_bnd80_s0 --wavelet pr --bound 8.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+fix_bnd80_s1 --wavelet pr --bound 8.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 1
+fix_bnd80_s2 --wavelet pr --bound 8.0 --dataset aapm --epochs 30 --patch 128 --batch-size 8 --val-interval 5 --seed 2

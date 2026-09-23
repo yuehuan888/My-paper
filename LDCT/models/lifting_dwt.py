@@ -83,9 +83,14 @@ class _LiftingBank1D(nn.Module):
     实测（`tests/test_lifting_pr.py` 与专项诊断）：PR 在 float64 下无条件成立，
     但在 float32 下**条件数随参数幅度急剧恶化**——
 
-        |P|,|U| |max| ≈ 1.0  → 闭环 max|err| ≈ 2e-07
-        |P|,|U| |max| ≈ 3.5  → 闭环 max|err| ≈ 1e-04
-        |P|,|U| |max| ≈ 5.3  → 闭环 max|err| ≈ 1e+01（灾难级）
+        |P|,|U| |max| ≈ 1.0  → 闭环 rel_L2 ≈ 1.1e-07
+        |P|,|U| |max| ≈ 2.0  → 闭环 rel_L2 ≈ 9.9e-07
+        |P|,|U| |max| ≈ 3.5  → 闭环 rel_L2 ≈ 1.4e-03
+        |P|,|U| |max| ≈ 5.3  → 闭环 rel_L2 ≈ 2.8e-01（灾难级）
+
+    ⚠️ 2026-09-15 更正：本表早先的中间一行写「≈3.5 → max|err| ≈ 1e-04」——
+       **与实测差约两个数量级**（实测 max|err| = 2.269e-02）。上表改为直接引用
+       `tests/test_lifting_pr.py` 的【6】节实测输出（rel_L2 口径），可复算。
 
     同一组参数换 float64 复测，σ=3.0 时误差从 12.19 降到 6.3e-07，
     故这不是结构错误，而是浮点条件数问题。
@@ -99,7 +104,8 @@ class _LiftingBank1D(nn.Module):
     """
 
     def __init__(self, n_taps: int = 3, learnable: bool = True,
-                 bound: float = 0.5, synth_mismatch: float = 0.0):
+                 bound: float = 0.5, synth_mismatch: float = 0.0,
+                 init_drift: float = 0.0):
         super().__init__()
         self.n_taps = n_taps
         self.bound = float(bound)
@@ -116,13 +122,35 @@ class _LiftingBank1D(nn.Module):
         self.register_buffer("p_init", p0)
         self.register_buffer("u_init", u0)
 
+        # ---- 初始漂移（E3：检验"训练会不会把 taps 拉回 Haar"）--------------
+        # init_drift = d > 0 时，把 θ 初值设为 atanh(d / bound)，使
+        #     |P − P_init| = |U − U_init| ≈ d
+        # 即**从离 Haar 距离 d 处出发**。若训练把它拉回接近 0，说明该任务的最优
+        # 小波就在 Haar 附近 —— 这从因果上解释了"可学习小波没学到东西"。
+        #
+        # ⚠️ 必须 d < bound，否则 atanh 发散。做 E3 时应把 bound 开到足够大
+        #    （如 8.0），否则 init_drift=1/2/4 根本到不了。
+        # ⚠️ 方向用正负交替，让 P 与 U 朝相反方向偏，避免只沿一个方向退化。
+        # 默认 d=0 -> θ=0 -> 严格等于 Haar，**对已有结果零影响**。
+        d = float(init_drift)
+        if d < 0:
+            raise ValueError(f"init_drift 必须非负，得到 {d}")
+        if d > 0 and d >= bound:
+            raise ValueError(
+                f"init_drift={d} 必须 < bound={bound}（否则 atanh 发散）。"
+                f"做 E3 时请把 --bound 开大，例如 --bound 8.0")
+        th0 = (torch.full((n_taps,), math.atanh(d / bound)) if d > 0
+               else torch.zeros(n_taps))
+        if d > 0:
+            sign = torch.tensor([(-1.0) ** i for i in range(n_taps)])
+            th0 = th0 * sign
         if learnable:
             # θ=0 时 tanh(0)=0，故初始严格等于 Haar 等价形式
-            self.theta_P = nn.Parameter(torch.zeros(n_taps))
-            self.theta_U = nn.Parameter(torch.zeros(n_taps))
+            self.theta_P = nn.Parameter(th0.clone())
+            self.theta_U = nn.Parameter(-th0.clone())   # P、U 反向初始
         else:
-            self.register_buffer("theta_P", torch.zeros(n_taps))
-            self.register_buffer("theta_U", torch.zeros(n_taps))
+            self.register_buffer("theta_P", th0.clone())
+            self.register_buffer("theta_U", -th0.clone())
 
     @property
     def P(self) -> torch.Tensor:
@@ -210,10 +238,10 @@ class LiftingWavelet2D(nn.Module):
     """
 
     def __init__(self, n_taps: int = 3, learnable: bool = True, bound: float = 0.5,
-                 synth_mismatch: float = 0.0):
+                 synth_mismatch: float = 0.0, init_drift: float = 0.0):
         super().__init__()
-        self.vert = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch)   # 沿高度 (dim -2)
-        self.horiz = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch)  # 沿宽度 (dim -1)
+        self.vert = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch, init_drift)
+        self.horiz = _LiftingBank1D(n_taps, learnable, bound, synth_mismatch, init_drift)
 
     def forward(self, x: torch.Tensor, normalize: bool = True):
         """子带命名与旧 `dwt_layer._haar_filters()` 对齐：
@@ -250,17 +278,32 @@ class MultiLevelLifting(nn.Module):
     是两组独立参数，无法保证任何闭环性质。
     """
 
-    BAND_NAMES = ("LL2", "LH2", "HL2", "HH2", "LH1", "HL1", "HH1")
+    # ⚠️ 2026-09-16：子带名由**硬编码 7 个（=levels 2）**改为按 levels 动态生成。
+    #    此前 `--levels 3` 会 KeyError —— decompose 末尾按 BAND_NAMES 过滤时把
+    #    LH3/HL3/HH3 丢掉，reconstruct 再访问就崩；而 run_ablation.ps1 里恰好
+    #    写了 lvl3 作业，一跑就炸。denoiser.BANDS 是同一处硬编码，同步修。
+    @staticmethod
+    def band_names(levels: int) -> tuple:
+        """levels 级分解的子带名：最粗的 LL，然后从高层往低层列细节。
+
+        顺序与 decompose 的构造顺序一致，保证下游按名字取用时是稳定的。
+        """
+        names = [f"LL{levels}"]
+        for lvl in range(levels, 0, -1):
+            names += [f"LH{lvl}", f"HL{lvl}", f"HH{lvl}"]
+        return tuple(names)
 
     def __init__(self, levels: int = 2, n_taps: int = 3, learnable: bool = True,
-                 bound: float = 0.5, synth_mismatch: float = 0.0):
+                 bound: float = 0.5, synth_mismatch: float = 0.0,
+                 init_drift: float = 0.0):
         super().__init__()
         self.levels = levels
         self.n_taps = n_taps
         self.bound = bound
         self.synth_mismatch = float(synth_mismatch)
+        self.init_drift = float(init_drift)
         self.banks = nn.ModuleList(
-            [LiftingWavelet2D(n_taps, learnable, bound, synth_mismatch)
+            [LiftingWavelet2D(n_taps, learnable, bound, synth_mismatch, init_drift)
              for _ in range(levels)]
         )
 
@@ -272,18 +315,17 @@ class MultiLevelLifting(nn.Module):
             LL, LH, HL, HH = self.banks[lvl](cur, normalize=normalize)
             per_level.append((LH, HL, HH))
             cur = LL
-        bands["LL2"] = cur
-        # 级 2 的细节，然后是级 1 的细节
+        bands[f"LL{self.levels}"] = cur
+        # 高层细节先列，然后往低层
         for lvl in range(self.levels, 0, -1):
             LH, HL, HH = per_level[lvl - 1]
-            suffix = str(lvl)
-            bands["LH" + suffix] = LH
-            bands["HL" + suffix] = HL
-            bands["HH" + suffix] = HH
-        return {k: bands[k] for k in self.BAND_NAMES}
+            bands[f"LH{lvl}"] = LH
+            bands[f"HL{lvl}"] = HL
+            bands[f"HH{lvl}"] = HH
+        return {k: bands[k] for k in self.band_names(self.levels)}
 
     def reconstruct(self, bands: dict, normalize: bool = True) -> torch.Tensor:
-        cur = bands["LL2"]
+        cur = bands[f"LL{self.levels}"]
         for lvl in range(self.levels, 0, -1):
             suffix = str(lvl)
             cur = self.banks[lvl - 1].inverse(

@@ -1,0 +1,10 @@
+{
+  "tag": "fix_unconstrained_s8",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 25,
+  "best_val_psnr": 29.608136135357114,
+  "elapsed_min": 5.4013507723808285,
+  "peak_vram_mb": 305.3,
+  "updated": "2026-09-16T08:51:09.656925+00:00"
+}

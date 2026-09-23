@@ -89,17 +89,40 @@ class PRWaveletDenoiser(nn.Module):
             （小波域只处理各子带，图像域残差可补偿整体强度偏移）
     """
 
-    BANDS = ("LL2", "LH2", "HL2", "HH2", "LH1", "HL1", "HH1")
+    # ⚠️ 2026-09-16：由硬编码 7 个（=levels 2）改为**按 levels 动态**，与
+    #    lifting_dwt.MultiLevelLifting.band_names 同一来源，避免两处各自硬编码而漂移。
+    @staticmethod
+    def band_names(levels: int) -> tuple:
+        from models.lifting_dwt import MultiLevelLifting
+        return MultiLevelLifting.band_names(levels)
 
     def __init__(self, levels: int = 2, mid_ch: int = 16, n_conv: int = 2,
                  wavelet: str = "pr", global_residual: bool = False,
-                 synth_mismatch: float = 0.0):
+                 synth_mismatch: float = 0.0, n_taps: int = 3, bound: float = 0.5,
+                 init_drift: float = 0.0):
         super().__init__()
         if wavelet not in ("pr", "fixed", "unconstrained"):
             raise ValueError(f"未知 wavelet={wavelet!r}")
         self.levels = levels
         self.wavelet_kind = wavelet
         self.global_residual = global_residual
+        # ---- 提升格式的两个旋钮（**贡献 3 的消融用**）----------------------
+        # n_taps: 每个 P/U 滤波器的抽头数（默认 3，与全部已有结果一致）
+        # bound : taps 相对 Haar 初始值的最大偏离（|taps| ≤ init + bound）
+        #
+        # ⚠️ 二者默认值 = 现有行为，改动对已有结果**零影响**。
+        #    bound 是论文贡献 3 的核心：无界化会让 float32 闭环从 3.6e-07
+        #    退化到 5.2e+00。此前该结论只有**单个观测点**，无法画曲线；
+        #    暴露此参数后才能做 bound 扫描，把"需要界定"从断言变成剂量-响应。
+        self.n_taps = int(n_taps)
+        self.bound = float(bound)
+        # E3 用：把 taps 初始化在离 Haar 距离 init_drift 处。
+        # 默认 0 = 严格 Haar 初始化，**对已有结果零影响**。
+        self.init_drift = float(init_drift)
+        if n_taps % 2 == 0:
+            raise ValueError(f"n_taps 必须为奇数（零填充需要中心抽头），得到 {n_taps}")
+        if bound < 0:
+            raise ValueError(f"bound 必须非负，得到 {bound}")
         # 受控闭环误差注入：>0 时，PR 臂的**合成**用 (1−ε)·U 而非 U。
         # 用于干预实验——检验"闭环误差本身是否导致性能退化"。
         # 默认 0.0，对已有结果零影响。
@@ -113,11 +136,16 @@ class PRWaveletDenoiser(nn.Module):
             self.idwt = MultiLevelIDWT(learnable=True)
             self.wavelet = None
         else:
-            self.wavelet = MultiLevelLifting(levels=levels, n_taps=3,
+            self.wavelet = MultiLevelLifting(levels=levels, n_taps=self.n_taps,
                                              learnable=(wavelet == "pr"),
-                                             synth_mismatch=synth_mismatch)
+                                             bound=self.bound,
+                                             synth_mismatch=synth_mismatch,
+                                             init_drift=self.init_drift)
             self.dwt = self.idwt = None
-        self.heads = nn.ModuleDict({b: BandHead(mid_ch, n_conv) for b in self.BANDS})
+        # 子带名随 levels 变化（levels=2 -> 7 个子带，levels=3 -> 10 个）。
+        # 头数与子带数保持一致，故这里必须用实例级的名字列表。
+        self.bands = self.band_names(levels)
+        self.heads = nn.ModuleDict({b: BandHead(mid_ch, n_conv) for b in self.bands})
 
         if global_residual:
             self.global_branch = nn.Sequential(
@@ -168,7 +196,7 @@ class PRWaveletDenoiser(nn.Module):
         xp, (H, W) = self._pad_to_multiple(x)
 
         bands = self.decompose(xp)
-        cleaned = {b: bands[b] - self.heads[b](bands[b]) for b in self.BANDS}
+        cleaned = {b: bands[b] - self.heads[b](bands[b]) for b in self.bands}
         out = self.reconstruct(cleaned)
 
         if self.global_branch is not None:

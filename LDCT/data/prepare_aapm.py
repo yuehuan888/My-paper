@@ -129,29 +129,56 @@ def build(src: str, out: str):
         zf, Xf = _read_series(fd)
         zq, Xq = _read_series(qd)
 
-        if len(zf) != len(zq):
-            raise ValueError(f"{pid}: full {len(zf)} != quarter {len(zq)}")
-        if not np.allclose(zf, zq, atol=1e-3):
-            bad = int(np.sum(~np.isclose(zf, zq, atol=1e-3)))
-            raise ValueError(f"{pid}: z 位置不一一对应（{bad} 处不符）")
+        # ⚠️ 2026-09-16：改为**按 z 位置取交集**，不再要求两侧数量严格相等。
+        #
+        # 为什么改：数据是从归档的一段连续字节里解出来的，而该区间**内有空洞** ——
+        # L067 全剂量缺 24-36 号共 13 张（span 长度恰好 100% 却仍缺内容），
+        # 原实现遇到这种情况直接 raise，整个数据集都建不出来。
+        #
+        # 取交集是诚实的做法：**只在两侧都有该 z 位置时才配对**，缺的丢掉并在
+        # 日志与 index.json 里显式记录丢了多少 —— 不允许静默丢弃。
+        zf = np.asarray(zf); zq = np.asarray(zq)
+        tol = 1e-3
+        # 对每个 full 的 z，找 quarter 中容差内的最近邻
+        idx_q = np.searchsorted(zq, zf)
+        pairs = []
+        used_q = set()
+        for i, z in enumerate(zf):
+            for cand in (idx_q[i] - 1, idx_q[i], idx_q[i] + 1):
+                if 0 <= cand < len(zq) and cand not in used_q \
+                        and abs(zq[cand] - z) <= tol:
+                    pairs.append((i, cand)); used_q.add(cand); break
+        if not pairs:
+            raise ValueError(f"{pid}: full 与 quarter 无任何 z 位置匹配")
+
+        fi = np.array([a for a, _ in pairs]); qi = np.array([b for _, b in pairs])
+        n_drop_f, n_drop_q = len(zf) - len(pairs), len(zq) - len(pairs)
+        if n_drop_f or n_drop_q:
+            print(f"  ⚠ {pid}: 配对 {len(pairs)} 对；"
+                  f"丢弃 full {n_drop_f} 张 / quarter {n_drop_q} 张（z 位置无对应）")
+        zf_p, Xf_p = zf[fi], Xf[fi]
+        Xq_p = Xq[qi]
 
         p = os.path.join(out, f"{pid}.h5")
         with h5py.File(p, "w") as f:
-            f.create_dataset("observation", data=Xq, compression="gzip", compression_opts=4)
-            f.create_dataset("ground_truth", data=Xf, compression="gzip", compression_opts=4)
+            f.create_dataset("observation", data=Xq_p, compression="gzip", compression_opts=4)
+            f.create_dataset("ground_truth", data=Xf_p, compression="gzip", compression_opts=4)
             f.attrs["patient_id"] = pid
-            f.attrs["n_slices"] = len(zf)
-            f.attrs["z_positions"] = np.asarray(zf, dtype=np.float64)
+            f.attrs["n_slices"] = len(pairs)
+            f.attrs["z_positions"] = np.asarray(zf_p, dtype=np.float64)
 
         index["patients"][pid] = {
-            "n_slices": int(len(zf)),
-            "shape": [int(Xf.shape[1]), int(Xf.shape[2])],
-            "z_range": [float(zf[0]), float(zf[-1])],
+            "n_slices": int(len(pairs)),
+            "shape": [int(Xf_p.shape[1]), int(Xf_p.shape[2])],
+            "z_range": [float(zf_p[0]), float(zf_p[-1])],
             "h5": os.path.relpath(p, ROOT),
-            "obs_range": [float(Xq.min()), float(Xq.max())],
-            "gt_range": [float(Xf.min()), float(Xf.max())],
+            "obs_range": [float(Xq_p.min()), float(Xq_p.max())],
+            "gt_range": [float(Xf_p.min()), float(Xf_p.max())],
+            # 显式记录丢弃量 —— 复现时必须能看到这一步
+            "dropped_full": int(n_drop_f),
+            "dropped_quarter": int(n_drop_q),
         }
-        print(f"  {pid}: {len(zf):>4} 片  {Xf.shape[1]}x{Xf.shape[2]}  "
+        print(f"  {pid}: {len(pairs):>4} 片  {Xf_p.shape[1]}x{Xf_p.shape[2]}  "
               f"({os.path.getsize(p)/1048576:.0f} MB)")
 
     with open(os.path.join(out, "index.json"), "w", encoding="utf-8") as f:

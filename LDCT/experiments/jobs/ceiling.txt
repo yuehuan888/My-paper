@@ -1,0 +1,4 @@
+ceil_mc64 --global-residual --mid-ch 64 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+ceil_nc3 --global-residual --n-conv 3 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+ceil_mc64nc3 --global-residual --mid-ch 64 --n-conv 3 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0
+ceil_mc32nc3 --global-residual --mid-ch 32 --n-conv 3 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 0

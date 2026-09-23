@@ -1,0 +1,10 @@
+{
+  "tag": "fix_bnd20_s2",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 30.089251420935806,
+  "elapsed_min": 8.661353365580242,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T09:20:07.199917+00:00"
+}

@@ -1,0 +1,10 @@
+{
+  "tag": "conv90_bnd20_s2",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 85,
+  "best_val_psnr": 30.19437160992414,
+  "elapsed_min": 9.256762599945068,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-18T02:38:41.528615+00:00"
+}

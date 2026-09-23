@@ -1,0 +1,10 @@
+{
+  "tag": "fix_pr_s3",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.75416850765662,
+  "elapsed_min": 7.9612662156422935,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T08:28:40.330604+00:00"
+}

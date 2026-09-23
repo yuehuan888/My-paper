@@ -16,6 +16,9 @@ LDCT/data/*
 !LDCT/data/prepare_aapm.py
 !LDCT/data/download.sh
 !LDCT/data/download_modelscope.sh
+# 2026-09-15 新增：AAPM 官方 Box 从本机不可达，改用 Kaggle 镜像；
+# 该脚本含实测的 Range 偏移与单实例锁，是复现数据的关键，必须入库。
+!LDCT/data/download_aapm.sh
 *.hdf5
 
 # ---------- 训练与调试产物（可由脚本重新生成） ----------

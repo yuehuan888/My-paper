@@ -1,0 +1,10 @@
+{
+  "tag": "new_bnd05_s2",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 29.995757934303395,
+  "elapsed_min": 4.594406076272329,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-16T03:54:39.260764+00:00"
+}

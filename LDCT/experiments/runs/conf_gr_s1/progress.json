@@ -1,0 +1,10 @@
+{
+  "tag": "conf_gr_s1",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 30.63784398559926,
+  "elapsed_min": 10.27407120068868,
+  "peak_vram_mb": 657.6,
+  "updated": "2026-09-20T06:08:39.596488+00:00"
+}

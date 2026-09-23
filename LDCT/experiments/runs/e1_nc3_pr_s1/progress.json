@@ -1,0 +1,10 @@
+{
+  "tag": "e1_nc3_pr_s1",
+  "epoch": 30,
+  "epochs": 30,
+  "best_epoch": 30,
+  "best_val_psnr": 30.071479213481048,
+  "elapsed_min": 7.027509534358979,
+  "peak_vram_mb": 305.9,
+  "updated": "2026-09-16T07:52:55.731911+00:00"
+}

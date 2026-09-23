@@ -1,0 +1,10 @@
+{
+  "tag": "conv90_fixed_s0",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 85,
+  "best_val_psnr": 29.779184858583502,
+  "elapsed_min": 6.889897048473358,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-18T02:00:40.198839+00:00"
+}

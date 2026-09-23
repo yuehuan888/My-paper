@@ -75,11 +75,19 @@ class LoDoPaBDataset(Dataset):
 
     def __init__(self, root: str, split: str = "train",
                  patch_size: int | None = None, is_training: bool = False,
-                 transform: Callable | None = None):
+                 transform: Callable | None = None,
+                 cache: bool = False):
+        # ⚠️ 2026-09-16：补 `cache` 形参。`train.py` 的 make_dataset 恒定传
+        #    `cache=True`（`train.py:57-61` 与 :238-243），而本类原先没有这个形参
+        #    -> `--dataset lodopab` 一跑就 TypeError。这是跨数据集实验的前置。
+        #    LoDoPaB 的 hdf5 未压缩，逐样本开文件不如 AAPM 的 gzip 那样致命，
+        #    但仍按同一语义支持缓存：首次读取时整片载入内存。
         self.root = root
         self.split = split
         self.patch_size = patch_size
         self.is_training = is_training
+        self.cache = cache
+        self._cache: dict = {}
         self.transform = transform
 
         self.gt_files = _scan(f"ground_truth_{split}", root)
@@ -131,11 +139,24 @@ class LoDoPaBDataset(Dataset):
         return len(self._index)
 
     def _read(self, fi: int, si: int):
+        if self.cache:
+            # 缓存**整个分片**而不是单片：单片的缓存命中率在乱序 shuffle 下接近 0，
+            # 而整片载入才能消掉反复开 hdf5 的开销（这才是 cache 存在的理由）。
+            if fi not in self._cache:
+                with h5py.File(self.obs_files[fi], "r") as f:
+                    o = np.asarray(f["data"], dtype=np.float32)
+                with h5py.File(self.gt_files[fi], "r") as f:
+                    g = np.asarray(f["data"], dtype=np.float32)
+                self._cache[fi] = (o, g)
+            o, g = self._cache[fi]
+            return o[si], g[si]
+
         with h5py.File(self.obs_files[fi], "r") as f:
             obs = f["data"][si]
         with h5py.File(self.gt_files[fi], "r") as f:
             gt = f["data"][si]
-        return np.asarray(obs, dtype=np.float32), np.asarray(gt, dtype=np.float32)
+        return (np.asarray(obs, dtype=np.float32),
+                np.asarray(gt, dtype=np.float32))
 
     def __getitem__(self, i: int):
         fi, si = self._index[i]
@@ -280,9 +301,18 @@ class AapmDataset(Dataset):
             if h < p or w < p:
                 raise ValueError(f"patch_size={p} > 图像尺寸 {(h, w)}")
             if self.is_training:
-                rng = np.random.default_rng()
-                y = int(rng.integers(0, h - p + 1))
-                x = int(rng.integers(0, w - p + 1))
+                # ⚠️ 2026-09-16 修：此处原为 `np.random.default_rng()`。
+                #    那是**全新生成器**，由 OS 熵播种，**完全绕开**
+                #    train.py 里的 random.seed / np.random.seed / torch.manual_seed。
+                #    后果：同一 `--seed` 跑两次，裁块位置不同 -> 结果本就不同，
+                #    种子间方差被人为抬高。这直接污染了全部配对统计。
+                #
+                #    改用 torch 的全局 RNG：它已被 train.py 按 `--seed` 播种，
+                #    且状态会随训练自然推进 —— 既**可复现**，又**保住逐轮多样性**
+                #    （若改成按样本号派生固定种子，1600 个样本就只有 1600 种裁块，
+                #     30 轮里反复用同一批，等于削弱增广）。
+                y = int(torch.randint(0, h - p + 1, (1,)).item())
+                x = int(torch.randint(0, w - p + 1, (1,)).item())
             else:
                 y, x = (h - p) // 2, (w - p) // 2
             obs, gt = obs[y:y+p, x:x+p], gt[y:y+p, x:x+p]

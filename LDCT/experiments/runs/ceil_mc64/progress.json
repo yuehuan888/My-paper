@@ -1,0 +1,10 @@
+{
+  "tag": "ceil_mc64",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 30.78521722954842,
+  "elapsed_min": 13.597646975517273,
+  "peak_vram_mb": 1169.8,
+  "updated": "2026-09-20T07:03:50.496681+00:00"
+}

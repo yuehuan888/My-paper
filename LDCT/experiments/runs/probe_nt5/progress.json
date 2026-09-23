@@ -1,0 +1,10 @@
+{
+  "tag": "probe_nt5",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 90,
+  "best_val_psnr": 30.24140664370345,
+  "elapsed_min": 9.512174908320109,
+  "peak_vram_mb": 305.6,
+  "updated": "2026-09-18T09:17:27.553227+00:00"
+}

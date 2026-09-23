@@ -1,0 +1,10 @@
+{
+  "tag": "redcnn90_s1",
+  "epoch": 90,
+  "epochs": 90,
+  "best_epoch": 80,
+  "best_val_psnr": 31.206651887810263,
+  "elapsed_min": 68.81034441788991,
+  "peak_vram_mb": 515.4,
+  "updated": "2026-09-18T06:41:47.495349+00:00"
+}

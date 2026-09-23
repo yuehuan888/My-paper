@@ -1,0 +1,2 @@
+conf_gr_s4 --global-residual --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4 --resume
+conf_grmc32_s4 --global-residual --mid-ch 32 --wavelet pr --bound 2.0 --dataset aapm --epochs 90 --patch 128 --batch-size 8 --val-interval 5 --seed 4 --resume
